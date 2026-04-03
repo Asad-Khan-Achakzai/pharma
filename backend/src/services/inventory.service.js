@@ -12,6 +12,7 @@ const getAll = async (companyId, query) => {
   const { page, limit, skip, sort } = parsePagination(query);
   const filter = { companyId };
   if (query.distributorId) filter.distributorId = query.distributorId;
+  if (query.productId) filter.productId = query.productId;
 
   const [docs, total] = await Promise.all([
     DistributorInventory.find(filter)
@@ -21,6 +22,65 @@ const getAll = async (companyId, query) => {
     DistributorInventory.countDocuments(filter)
   ]);
   return { docs, total, page, limit };
+};
+
+const getSummary = async (companyId) => {
+  const cid = new mongoose.Types.ObjectId(companyId);
+
+  const byProduct = await DistributorInventory.aggregate([
+    { $match: { companyId: cid, isDeleted: { $ne: true } } },
+    {
+      $group: {
+        _id: '$productId',
+        totalQuantity: { $sum: '$quantity' },
+        totalValue: { $sum: { $multiply: ['$quantity', '$avgCostPerUnit'] } },
+        distributorCount: { $sum: 1 },
+        weightedCostSum: { $sum: { $multiply: ['$quantity', '$avgCostPerUnit'] } }
+      }
+    },
+    {
+      $lookup: {
+        from: 'products',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'product'
+      }
+    },
+    { $unwind: '$product' },
+    {
+      $project: {
+        _id: 0,
+        productId: '$_id',
+        productName: '$product.name',
+        composition: '$product.composition',
+        mrp: '$product.mrp',
+        tp: '$product.tp',
+        casting: '$product.casting',
+        totalQuantity: 1,
+        totalValue: { $round: ['$totalValue', 2] },
+        distributorCount: 1,
+        avgCostPerUnit: {
+          $cond: [
+            { $gt: ['$totalQuantity', 0] },
+            { $round: [{ $divide: ['$weightedCostSum', '$totalQuantity'] }, 2] },
+            0
+          ]
+        }
+      }
+    },
+    { $sort: { productName: 1 } }
+  ]);
+
+  const totals = byProduct.reduce(
+    (acc, row) => {
+      acc.totalUnits += row.totalQuantity;
+      acc.totalValue = roundPKR(acc.totalValue + row.totalValue);
+      return acc;
+    },
+    { totalUnits: 0, totalValue: 0, uniqueProducts: byProduct.length }
+  );
+
+  return { byProduct, totals };
 };
 
 const getByDistributor = async (companyId, distributorId) => {
@@ -44,6 +104,9 @@ const transfer = async (companyId, data, reqUser) => {
   const productMap = {};
   products.forEach((p) => { productMap[p._id.toString()] = p; });
 
+  const totalUnits = items.reduce((sum, i) => sum + i.quantity, 0);
+  const shippingPerUnit = totalUnits > 0 ? roundPKR((totalShippingCost || 0) / totalUnits) : 0;
+
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -53,7 +116,7 @@ const transfer = async (companyId, data, reqUser) => {
     for (const item of items) {
       const product = productMap[item.productId];
       const castingAtTime = product.casting;
-      const shippingCostPerUnit = item.shippingCostPerUnit || 0;
+      const shippingCostPerUnit = shippingPerUnit;
       const newCostPerUnit = roundPKR(castingAtTime + shippingCostPerUnit);
 
       let inv = await DistributorInventory.findOne(
@@ -122,4 +185,4 @@ const getTransfers = async (companyId, query) => {
   return { docs, total, page, limit };
 };
 
-module.exports = { getAll, getByDistributor, transfer, getTransfers };
+module.exports = { getAll, getByDistributor, transfer, getTransfers, getSummary };

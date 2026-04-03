@@ -35,6 +35,8 @@ const TargetsPage = () => {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
+  const isFormValid = form.medicalRepId !== '' && form.month.trim() !== '' && form.salesTarget > 0 && form.packsTarget > 0
+
   const fetchData = async () => {
     setLoading(true)
     try { const [t, u] = await Promise.all([targetsService.list({ limit: 100 }), usersService.list({ limit: 100 })]); setData(t.data.data || []); setUsers(u.data.data || []) }
@@ -73,13 +75,13 @@ const TargetsPage = () => {
         <DialogTitle>Add Target</DialogTitle>
         <DialogContent>
           <Grid container spacing={4} className='pbs-4'>
-            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField select fullWidth label='Medical Rep' value={form.medicalRepId} onChange={e => setForm(p => ({ ...p, medicalRepId: e.target.value }))}>{users.filter((u: any) => u.role === 'MEDICAL_REP').map((u: any) => <MenuItem key={u._id} value={u._id}>{u.name}</MenuItem>)}</CustomTextField></Grid>
-            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='Month (YYYY-MM)' value={form.month} onChange={e => setForm(p => ({ ...p, month: e.target.value }))} placeholder='2026-04' /></Grid>
-            <Grid size={{ xs: 6 }}><CustomTextField fullWidth label='Sales Target' type='number' value={form.salesTarget} onChange={e => setForm(p => ({ ...p, salesTarget: +e.target.value }))} /></Grid>
-            <Grid size={{ xs: 6 }}><CustomTextField fullWidth label='Packs Target' type='number' value={form.packsTarget} onChange={e => setForm(p => ({ ...p, packsTarget: +e.target.value }))} /></Grid>
+            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField select required fullWidth label='Medical Rep' value={form.medicalRepId} onChange={e => setForm(p => ({ ...p, medicalRepId: e.target.value }))}>{users.filter((u: any) => u.role === 'MEDICAL_REP').map((u: any) => <MenuItem key={u._id} value={u._id}>{u.name}</MenuItem>)}</CustomTextField></Grid>
+            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField required fullWidth label='Month (YYYY-MM)' value={form.month} onChange={e => setForm(p => ({ ...p, month: e.target.value }))} placeholder='2026-04' /></Grid>
+            <Grid size={{ xs: 6 }}><CustomTextField required fullWidth label='Sales Target' type='number' value={form.salesTarget} onChange={e => setForm(p => ({ ...p, salesTarget: +e.target.value }))} /></Grid>
+            <Grid size={{ xs: 6 }}><CustomTextField required fullWidth label='Packs Target' type='number' value={form.packsTarget} onChange={e => setForm(p => ({ ...p, packsTarget: +e.target.value }))} /></Grid>
           </Grid>
         </DialogContent>
-        <DialogActions><Button onClick={() => setOpen(false)} disabled={saving}>Cancel</Button><Button variant='contained' onClick={handleSave} disabled={saving} startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}>{saving ? 'Saving...' : 'Save'}</Button></DialogActions>
+        <DialogActions><Button onClick={() => setOpen(false)} disabled={saving}>Cancel</Button><Button variant='contained' onClick={handleSave} disabled={saving || !isFormValid} startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}>{saving ? 'Saving...' : 'Save'}</Button></DialogActions>
       </Dialog>
     </Card>
   )

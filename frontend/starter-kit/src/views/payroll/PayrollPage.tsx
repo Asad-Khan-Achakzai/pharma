@@ -44,6 +44,9 @@ const PayrollPage = () => {
   const [confirmPayOpen, setConfirmPayOpen] = useState(false)
   const [payTargetId, setPayTargetId] = useState<string | null>(null)
   const [paying, setPaying] = useState(false)
+  const [viewItem, setViewItem] = useState<PayrollEntry | null>(null)
+
+  const isFormValid = form.employeeId !== '' && form.month.trim() !== '' && form.baseSalary > 0
 
   const fetchData = async () => {
     setLoading(true)
@@ -74,17 +77,25 @@ const PayrollPage = () => {
   const columns = useMemo<ColumnDef<PayrollEntry, any>[]>(() => [
     columnHelper.display({ id: 'employee', header: 'Employee', cell: ({ row }) => <Typography fontWeight={500}>{row.original.employeeId?.name || '-'}</Typography> }),
     columnHelper.accessor('month', { header: 'Month' }),
-    columnHelper.accessor('baseSalary', { header: 'Base', cell: ({ row }) => `₨ ${row.original.baseSalary?.toFixed(2)}` }),
     columnHelper.accessor('netSalary', { header: 'Net Salary', cell: ({ row }) => <Typography fontWeight={500}>₨ {row.original.netSalary?.toFixed(2)}</Typography> }),
     columnHelper.accessor('status', { header: 'Status', cell: ({ row }) => <Chip label={row.original.status} color={row.original.status === 'PAID' ? 'success' : 'warning'} size='small' variant='tonal' /> }),
-    columnHelper.display({ id: 'actions', header: '', cell: ({ row }) => row.original.status === 'PENDING' && canPay ? <Button size='small' variant='tonal' color='success' onClick={() => openPayConfirm(row.original._id)} disabled={payingId !== null} startIcon={payingId === row.original._id ? <CircularProgress size={20} color='inherit' /> : undefined}>{payingId === row.original._id ? 'Paying...' : 'Pay'}</Button> : null })
+    columnHelper.display({ id: 'actions', header: 'Actions', cell: ({ row }) => (
+      <div className='flex gap-1 items-center'>
+        <IconButton size='small' onClick={() => setViewItem(row.original)}><i className='tabler-eye text-textSecondary' /></IconButton>
+        {row.original.status === 'PENDING' && canPay && <Button size='small' variant='tonal' color='success' onClick={() => openPayConfirm(row.original._id)} disabled={payingId !== null} startIcon={payingId === row.original._id ? <CircularProgress size={20} color='inherit' /> : undefined}>{payingId === row.original._id ? 'Paying...' : 'Pay'}</Button>}
+      </div>
+    ) })
   ], [canPay, payingId])
 
   const table = useReactTable({ data, columns, filterFns: { fuzzy: fuzzyFilter }, state: { globalFilter }, globalFilterFn: fuzzyFilter, onGlobalFilterChange: setGlobalFilter, getCoreRowModel: getCoreRowModel(), getFilteredRowModel: getFilteredRowModel(), getSortedRowModel: getSortedRowModel(), getPaginationRowModel: getPaginationRowModel() })
 
   return (
     <Card>
-      <CardHeader title='Payroll' action={<div className='flex gap-4 items-center'><CustomTextField value={globalFilter ?? ''} onChange={(e) => setGlobalFilter(e.target.value)} placeholder='Search...' />{canCreate && <Button variant='contained' startIcon={<i className='tabler-plus' />} onClick={() => { setForm({ employeeId: '', month: '', baseSalary: 0, bonus: 0, deductions: 0 }); setOpen(true) }}>Add Payroll</Button>}</div>} />
+      <CardHeader title='Payroll' />
+      <div className='flex flex-wrap items-center justify-between gap-4 pli-6 pbe-4'>
+        <CustomTextField value={globalFilter ?? ''} onChange={(e) => setGlobalFilter(e.target.value)} placeholder='Search...' />
+        {canCreate && <Button variant='contained' startIcon={<i className='tabler-plus' />} onClick={() => { setForm({ employeeId: '', month: '', baseSalary: 0, bonus: 0, deductions: 0 }); setOpen(true) }}>Add Payroll</Button>}
+      </div>
       <div className='overflow-x-auto'>
         <table className={tableStyles.table}>
           <thead>{table.getHeaderGroups().map(hg => <tr key={hg.id}>{hg.headers.map(h => <th key={h.id}>{h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}</th>)}</tr>)}</thead>
@@ -96,14 +107,32 @@ const PayrollPage = () => {
         <DialogTitle>Add Payroll</DialogTitle>
         <DialogContent>
           <Grid container spacing={4} className='pbs-4'>
-            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField select fullWidth label='Employee' value={form.employeeId} onChange={e => setForm(p => ({ ...p, employeeId: e.target.value }))}>{users.map(u => <MenuItem key={u._id} value={u._id}>{u.name}</MenuItem>)}</CustomTextField></Grid>
-            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='Month (YYYY-MM)' value={form.month} onChange={e => setForm(p => ({ ...p, month: e.target.value }))} placeholder='2026-04' /></Grid>
-            <Grid size={{ xs: 4 }}><CustomTextField fullWidth label='Base Salary' type='number' value={form.baseSalary} onChange={e => setForm(p => ({ ...p, baseSalary: +e.target.value }))} /></Grid>
+            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField select required fullWidth label='Employee' value={form.employeeId} onChange={e => setForm(p => ({ ...p, employeeId: e.target.value }))}>{users.map(u => <MenuItem key={u._id} value={u._id}>{u.name}</MenuItem>)}</CustomTextField></Grid>
+            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField required fullWidth label='Month (YYYY-MM)' value={form.month} onChange={e => setForm(p => ({ ...p, month: e.target.value }))} placeholder='2026-04' /></Grid>
+            <Grid size={{ xs: 4 }}><CustomTextField required fullWidth label='Base Salary' type='number' value={form.baseSalary} onChange={e => setForm(p => ({ ...p, baseSalary: +e.target.value }))} /></Grid>
             <Grid size={{ xs: 4 }}><CustomTextField fullWidth label='Bonus' type='number' value={form.bonus} onChange={e => setForm(p => ({ ...p, bonus: +e.target.value }))} /></Grid>
             <Grid size={{ xs: 4 }}><CustomTextField fullWidth label='Deductions' type='number' value={form.deductions} onChange={e => setForm(p => ({ ...p, deductions: +e.target.value }))} /></Grid>
           </Grid>
         </DialogContent>
-        <DialogActions><Button onClick={() => setOpen(false)} disabled={saving}>Cancel</Button><Button variant='contained' onClick={handleSave} disabled={saving} startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}>{saving ? 'Saving...' : 'Save'}</Button></DialogActions>
+        <DialogActions><Button onClick={() => setOpen(false)} disabled={saving}>Cancel</Button><Button variant='contained' onClick={handleSave} disabled={saving || !isFormValid} startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}>{saving ? 'Saving...' : 'Save'}</Button></DialogActions>
+      </Dialog>
+
+      <Dialog open={!!viewItem} onClose={() => setViewItem(null)} maxWidth='sm' fullWidth>
+        <DialogTitle>Payroll Details</DialogTitle>
+        <DialogContent>
+          {viewItem && (
+            <Grid container spacing={3} className='pbs-4'>
+              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Employee</Typography><Typography fontWeight={500}>{viewItem.employeeId?.name || '-'}</Typography></Grid>
+              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Month</Typography><Typography>{viewItem.month}</Typography></Grid>
+              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Base Salary</Typography><Typography>₨ {viewItem.baseSalary?.toFixed(2)}</Typography></Grid>
+              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Bonus</Typography><Typography>₨ {viewItem.bonus?.toFixed(2)}</Typography></Grid>
+              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Deductions</Typography><Typography>₨ {viewItem.deductions?.toFixed(2)}</Typography></Grid>
+              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Net Salary</Typography><Typography fontWeight={500}>₨ {viewItem.netSalary?.toFixed(2)}</Typography></Grid>
+              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Status</Typography><Chip label={viewItem.status} color={viewItem.status === 'PAID' ? 'success' : 'warning'} size='small' variant='tonal' /></Grid>
+            </Grid>
+          )}
+        </DialogContent>
+        <DialogActions><Button onClick={() => setViewItem(null)}>Close</Button></DialogActions>
       </Dialog>
 
       <ConfirmDialog

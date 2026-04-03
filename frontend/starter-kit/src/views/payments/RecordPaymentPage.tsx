@@ -20,6 +20,8 @@ const RecordPaymentPage = () => {
   const [saving, setSaving] = useState(false)
   const [loadingData, setLoadingData] = useState(true)
 
+  const isFormValid = form.pharmacyId !== '' && form.amount > 0 && form.paymentMethod !== ''
+
   useEffect(() => {
     const f = async () => {
       setLoadingData(true)
@@ -46,12 +48,12 @@ const RecordPaymentPage = () => {
           <div className='flex justify-center p-12'><CircularProgress /></div>
         ) : (
         <Grid container spacing={4}>
-          <Grid size={{ xs: 12, sm: 6 }}><CustomTextField select fullWidth label='Pharmacy' value={form.pharmacyId} onChange={e => setForm(p => ({ ...p, pharmacyId: e.target.value }))}>{pharmacies.map(p => <MenuItem key={p._id} value={p._id}>{p.name}</MenuItem>)}</CustomTextField></Grid>
-          <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='Amount (PKR)' type='number' value={form.amount} onChange={e => setForm(p => ({ ...p, amount: +e.target.value }))} /></Grid>
-          <Grid size={{ xs: 12, sm: 6 }}><CustomTextField select fullWidth label='Payment Method' value={form.paymentMethod} onChange={e => setForm(p => ({ ...p, paymentMethod: e.target.value }))}><MenuItem value='CASH'>Cash</MenuItem><MenuItem value='CHEQUE'>Cheque</MenuItem><MenuItem value='BANK_TRANSFER'>Bank Transfer</MenuItem><MenuItem value='UPI'>UPI</MenuItem></CustomTextField></Grid>
+          <Grid size={{ xs: 12, sm: 6 }}><CustomTextField required select fullWidth label='Pharmacy' value={form.pharmacyId} onChange={e => setForm(p => ({ ...p, pharmacyId: e.target.value }))}>{pharmacies.map(p => <MenuItem key={p._id} value={p._id}>{p.name}</MenuItem>)}</CustomTextField></Grid>
+          <Grid size={{ xs: 12, sm: 6 }}><CustomTextField required fullWidth label='Amount (PKR)' type='number' value={form.amount} onChange={e => setForm(p => ({ ...p, amount: +e.target.value }))} /></Grid>
+          <Grid size={{ xs: 12, sm: 6 }}><CustomTextField required select fullWidth label='Payment Method' value={form.paymentMethod} onChange={e => setForm(p => ({ ...p, paymentMethod: e.target.value }))}><MenuItem value='CASH'>Cash</MenuItem><MenuItem value='CHEQUE'>Cheque</MenuItem><MenuItem value='BANK_TRANSFER'>Bank Transfer</MenuItem><MenuItem value='UPI'>UPI</MenuItem></CustomTextField></Grid>
           <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='Reference Number' value={form.referenceNumber} onChange={e => setForm(p => ({ ...p, referenceNumber: e.target.value }))} /></Grid>
           <Grid size={{ xs: 12 }}><CustomTextField fullWidth label='Notes' multiline rows={2} value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} /></Grid>
-          <Grid size={{ xs: 12 }}><Button variant='contained' onClick={handleSubmit} disabled={saving} startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}>{saving ? 'Saving...' : 'Record Payment'}</Button></Grid>
+          <Grid size={{ xs: 12 }}><Button variant='contained' onClick={handleSubmit} disabled={saving || !isFormValid} startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}>{saving ? 'Saving...' : 'Record Payment'}</Button></Grid>
         </Grid>
         )}
       </CardContent>

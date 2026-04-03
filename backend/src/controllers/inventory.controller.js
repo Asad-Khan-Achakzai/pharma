@@ -22,4 +22,9 @@ const getTransfers = asyncHandler(async (req, res) => {
   ApiResponse.paginated(res, result);
 });
 
-module.exports = { getAll, getByDistributor, transfer, getTransfers };
+const getSummary = asyncHandler(async (req, res) => {
+  const result = await inventoryService.getSummary(req.companyId);
+  ApiResponse.success(res, result);
+});
+
+module.exports = { getAll, getByDistributor, transfer, getTransfers, getSummary };

@@ -63,6 +63,8 @@ const DistributorListPage = () => {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
 
+  const isFormValid = form.name.trim() !== ''
+
   const { hasPermission } = useAuth()
   const canCreate = hasPermission('distributors.create')
   const canEdit = hasPermission('distributors.edit')
@@ -150,15 +152,11 @@ const DistributorListPage = () => {
 
   return (
     <Card>
-      <CardHeader
-        title='Distributors'
-        action={
-          <div className='flex gap-4 items-center'>
-            <CustomTextField value={globalFilter ?? ''} onChange={(e) => setGlobalFilter(e.target.value)} placeholder='Search...' />
-            {canCreate && <Button variant='contained' startIcon={<i className='tabler-plus' />} onClick={() => handleOpen()}>Add Distributor</Button>}
-          </div>
-        }
-      />
+      <CardHeader title='Distributors' />
+      <div className='flex flex-wrap items-center justify-between gap-4 pli-6 pbe-4'>
+        <CustomTextField value={globalFilter ?? ''} onChange={(e) => setGlobalFilter(e.target.value)} placeholder='Search...' />
+        {canCreate && <Button variant='contained' startIcon={<i className='tabler-plus' />} onClick={() => handleOpen()}>Add Distributor</Button>}
+      </div>
       <div className='overflow-x-auto'>
         <table className={tableStyles.table}>
           <thead>
@@ -196,7 +194,7 @@ const DistributorListPage = () => {
         <DialogTitle>{editItem ? 'Edit Distributor' : 'Add Distributor'}</DialogTitle>
         <DialogContent>
           <Grid container spacing={4} className='pbs-4'>
-            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='Name' value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></Grid>
+            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField required fullWidth label='Name' value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></Grid>
             <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='City' value={form.city} onChange={e => setForm(p => ({ ...p, city: e.target.value }))} /></Grid>
             <Grid size={{ xs: 12 }}><CustomTextField fullWidth label='Address' value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} /></Grid>
             <Grid size={{ xs: 6 }}><CustomTextField fullWidth label='Phone' value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} /></Grid>
@@ -206,7 +204,7 @@ const DistributorListPage = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpen(false)}>Cancel</Button>
-          <Button variant='contained' onClick={handleSave} disabled={saving} startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}>{saving ? 'Saving...' : 'Save'}</Button>
+          <Button variant='contained' onClick={handleSave} disabled={saving || !isFormValid} startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}>{saving ? 'Saving...' : 'Save'}</Button>
         </DialogActions>
       </Dialog>
 

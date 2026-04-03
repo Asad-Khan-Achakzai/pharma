@@ -32,6 +32,8 @@ const CreateOrderPage = () => {
   const [loadingData, setLoadingData] = useState(true)
   const [submitting, setSubmitting] = useState(false)
 
+  const isFormValid = pharmacyId !== '' && distributorId !== '' && items.length > 0 && items.every(i => i.productId !== '' && i.quantity > 0)
+
   useEffect(() => {
     const fetch = async () => {
       setLoadingData(true)
@@ -71,12 +73,12 @@ const CreateOrderPage = () => {
       <CardContent>
         <Grid container spacing={4}>
           <Grid size={{ xs: 12, sm: 4 }}>
-            <CustomTextField select fullWidth label='Pharmacy' value={pharmacyId} onChange={e => setPharmacyId(e.target.value)}>
+            <CustomTextField required select fullWidth label='Pharmacy' value={pharmacyId} onChange={e => setPharmacyId(e.target.value)}>
               {pharmacies.map(p => <MenuItem key={p._id} value={p._id}>{p.name}</MenuItem>)}
             </CustomTextField>
           </Grid>
           <Grid size={{ xs: 12, sm: 4 }}>
-            <CustomTextField select fullWidth label='Distributor' value={distributorId} onChange={e => setDistributorId(e.target.value)}>
+            <CustomTextField required select fullWidth label='Distributor' value={distributorId} onChange={e => setDistributorId(e.target.value)}>
               {distributors.map(d => <MenuItem key={d._id} value={d._id}>{d.name}</MenuItem>)}
             </CustomTextField>
           </Grid>
@@ -90,12 +92,12 @@ const CreateOrderPage = () => {
           {items.map((item, i) => (
             <Grid container spacing={3} key={i} size={{ xs: 12 }}>
               <Grid size={{ xs: 12, sm: 3 }}>
-                <CustomTextField select fullWidth label='Product' value={item.productId} onChange={e => updateItem(i, 'productId', e.target.value)}>
+                <CustomTextField required select fullWidth label='Product' value={item.productId} onChange={e => updateItem(i, 'productId', e.target.value)}>
                   {products.map(p => <MenuItem key={p._id} value={p._id}>{p.name}</MenuItem>)}
                 </CustomTextField>
               </Grid>
               <Grid size={{ xs: 6, sm: 2 }}>
-                <CustomTextField fullWidth label='Qty' type='number' value={item.quantity} onChange={e => updateItem(i, 'quantity', +e.target.value)} />
+                <CustomTextField required fullWidth label='Qty' type='number' value={item.quantity} onChange={e => updateItem(i, 'quantity', +e.target.value)} />
               </Grid>
               <Grid size={{ xs: 6, sm: 2 }}>
                 <CustomTextField fullWidth label='Dist. Disc. %' type='number' value={item.distributorDiscount} onChange={e => updateItem(i, 'distributorDiscount', +e.target.value)} />
@@ -111,7 +113,7 @@ const CreateOrderPage = () => {
 
           <Grid size={{ xs: 12 }}><Button variant='outlined' onClick={addItem} startIcon={<i className='tabler-plus' />}>Add Item</Button></Grid>
           <Grid size={{ xs: 12 }}><CustomTextField fullWidth label='Notes' multiline rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></Grid>
-          <Grid size={{ xs: 12 }}><Button variant='contained' onClick={handleSubmit} disabled={submitting}>{submitting ? 'Creating...' : 'Create Order'}</Button></Grid>
+          <Grid size={{ xs: 12 }}><Button variant='contained' onClick={handleSubmit} disabled={submitting || !isFormValid}>{submitting ? 'Creating...' : 'Create Order'}</Button></Grid>
         </Grid>
       </CardContent>
       )}

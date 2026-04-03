@@ -40,6 +40,8 @@ const ExpenseListPage = () => {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
 
+  const isFormValid = form.category !== '' && form.amount > 0
+
   const { hasPermission } = useAuth()
   const canCreate = hasPermission('expenses.create')
   const canDelete = hasPermission('expenses.delete')
@@ -80,7 +82,11 @@ const ExpenseListPage = () => {
 
   return (
     <Card>
-      <CardHeader title='Expenses' action={<div className='flex gap-4 items-center'><CustomTextField value={globalFilter ?? ''} onChange={(e) => setGlobalFilter(e.target.value)} placeholder='Search...' />{canCreate && <Button variant='contained' startIcon={<i className='tabler-plus' />} onClick={() => { setForm({ category: 'OTHER', amount: 0, description: '' }); setOpen(true) }}>Add Expense</Button>}</div>} />
+      <CardHeader title='Expenses' />
+      <div className='flex flex-wrap items-center justify-between gap-4 pli-6 pbe-4'>
+        <CustomTextField value={globalFilter ?? ''} onChange={(e) => setGlobalFilter(e.target.value)} placeholder='Search...' />
+        {canCreate && <Button variant='contained' startIcon={<i className='tabler-plus' />} onClick={() => { setForm({ category: 'OTHER', amount: 0, description: '' }); setOpen(true) }}>Add Expense</Button>}
+      </div>
       <div className='overflow-x-auto'>
         <table className={tableStyles.table}>
           <thead>{table.getHeaderGroups().map(hg => <tr key={hg.id}>{hg.headers.map(h => <th key={h.id}>{h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}</th>)}</tr>)}</thead>
@@ -92,12 +98,12 @@ const ExpenseListPage = () => {
         <DialogTitle>Add Expense</DialogTitle>
         <DialogContent>
           <Grid container spacing={4} className='pbs-4'>
-            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField select fullWidth label='Category' value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}>{categories.map(c => <MenuItem key={c} value={c}>{c.replace('_', ' ')}</MenuItem>)}</CustomTextField></Grid>
-            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='Amount' type='number' value={form.amount} onChange={e => setForm(p => ({ ...p, amount: +e.target.value }))} /></Grid>
+            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField select required fullWidth label='Category' value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}>{categories.map(c => <MenuItem key={c} value={c}>{c.replace('_', ' ')}</MenuItem>)}</CustomTextField></Grid>
+            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField required fullWidth label='Amount' type='number' value={form.amount} onChange={e => setForm(p => ({ ...p, amount: +e.target.value }))} /></Grid>
             <Grid size={{ xs: 12 }}><CustomTextField fullWidth label='Description' value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} /></Grid>
           </Grid>
         </DialogContent>
-        <DialogActions><Button onClick={() => setOpen(false)}>Cancel</Button><Button variant='contained' onClick={handleSave} disabled={saving} startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}>{saving ? 'Saving...' : 'Save'}</Button></DialogActions>
+        <DialogActions><Button onClick={() => setOpen(false)}>Cancel</Button><Button variant='contained' onClick={handleSave} disabled={saving || !isFormValid} startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}>{saving ? 'Saving...' : 'Save'}</Button></DialogActions>
       </Dialog>
 
       <ConfirmDialog

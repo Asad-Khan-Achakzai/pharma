@@ -60,6 +60,9 @@ const UserListPage = () => {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [viewItem, setViewItem] = useState<User | null>(null)
+
+  const isFormValid = form.name.trim() !== '' && form.email.trim() !== '' && form.role !== '' && (editItem ? true : form.password.trim() !== '')
 
   const { hasPermission } = useAuth()
   const canCreate = hasPermission('users.create')
@@ -109,16 +112,9 @@ const UserListPage = () => {
     columnHelper.accessor('email', { header: 'Email' }),
     columnHelper.accessor('role', { header: 'Role', cell: ({ row }) => <Chip label={row.original.role} color={row.original.role === 'ADMIN' ? 'primary' : 'default'} size='small' variant='tonal' /> }),
     columnHelper.display({ id: 'status', header: 'Status', cell: ({ row }) => <Chip label={row.original.isActive ? 'Active' : 'Inactive'} color={row.original.isActive ? 'success' : 'error'} size='small' variant='tonal' /> }),
-    columnHelper.accessor('lastLoginAt', {
-      header: 'Last Login',
-      cell: ({ getValue }) => {
-        const v = getValue()
-        if (v == null || v === '') return '-'
-        return new Date(v).toLocaleString()
-      }
-    }),
     columnHelper.display({ id: 'actions', header: 'Actions', cell: ({ row }) => (
       <div className='flex gap-1'>
+        <IconButton size='small' onClick={() => setViewItem(row.original)}><i className='tabler-eye text-textSecondary' /></IconButton>
         {canEdit && <IconButton size='small' onClick={() => handleOpen(row.original)}><i className='tabler-edit text-textSecondary' /></IconButton>}
         {canDelete && <IconButton size='small' onClick={() => openDeleteConfirm(row.original._id)}><i className='tabler-trash text-textSecondary' /></IconButton>}
       </div>
@@ -129,7 +125,11 @@ const UserListPage = () => {
 
   return (
     <Card>
-      <CardHeader title='Users' action={<div className='flex gap-4 items-center'><CustomTextField value={globalFilter ?? ''} onChange={(e) => setGlobalFilter(e.target.value)} placeholder='Search...' />{canCreate && <Button variant='contained' startIcon={<i className='tabler-plus' />} onClick={() => handleOpen()}>Add User</Button>}</div>} />
+      <CardHeader title='Users' />
+      <div className='flex flex-wrap items-center justify-between gap-4 pli-6 pbe-4'>
+        <CustomTextField value={globalFilter ?? ''} onChange={(e) => setGlobalFilter(e.target.value)} placeholder='Search...' />
+        {canCreate && <Button variant='contained' startIcon={<i className='tabler-plus' />} onClick={() => handleOpen()}>Add User</Button>}
+      </div>
       <div className='overflow-x-auto'>
         <table className={tableStyles.table}>
           <thead>{table.getHeaderGroups().map(hg => <tr key={hg.id}>{hg.headers.map(h => <th key={h.id}>{h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}</th>)}</tr>)}</thead>
@@ -142,10 +142,10 @@ const UserListPage = () => {
         <DialogTitle>{editItem ? 'Edit User' : 'Add User'}</DialogTitle>
         <DialogContent>
           <Grid container spacing={4} className='pbs-4'>
-            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='Name' value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></Grid>
-            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='Email' value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} /></Grid>
-            {!editItem && <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='Password' type='password' value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} /></Grid>}
-            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField select fullWidth label='Role' value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))}><MenuItem value='ADMIN'>Admin</MenuItem><MenuItem value='MEDICAL_REP'>Medical Rep</MenuItem></CustomTextField></Grid>
+            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField required fullWidth label='Name' value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} /></Grid>
+            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField required fullWidth label='Email' value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} /></Grid>
+            {!editItem && <Grid size={{ xs: 12, sm: 6 }}><CustomTextField required fullWidth label='Password' type='password' value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} /></Grid>}
+            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField required select fullWidth label='Role' value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))}><MenuItem value='ADMIN'>Admin</MenuItem><MenuItem value='MEDICAL_REP'>Medical Rep</MenuItem></CustomTextField></Grid>
             <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='Phone' value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} /></Grid>
             {form.role === 'MEDICAL_REP' && (
               <Grid size={{ xs: 12 }}>
@@ -164,7 +164,27 @@ const UserListPage = () => {
             )}
           </Grid>
         </DialogContent>
-        <DialogActions><Button onClick={() => setOpen(false)}>Cancel</Button><Button variant='contained' onClick={handleSave} disabled={saving} startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}>{saving ? 'Saving...' : 'Save'}</Button></DialogActions>
+        <DialogActions><Button onClick={() => setOpen(false)}>Cancel</Button><Button variant='contained' onClick={handleSave} disabled={saving || !isFormValid} startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}>{saving ? 'Saving...' : 'Save'}</Button></DialogActions>
+      </Dialog>
+
+      <Dialog open={!!viewItem} onClose={() => setViewItem(null)} maxWidth='sm' fullWidth>
+        <DialogTitle>User Details</DialogTitle>
+        <DialogContent>
+          {viewItem && (
+            <Grid container spacing={3} className='pbs-4'>
+              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Name</Typography><Typography fontWeight={500}>{viewItem.name}</Typography></Grid>
+              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Email</Typography><Typography>{viewItem.email}</Typography></Grid>
+              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Role</Typography><Chip label={viewItem.role} color={viewItem.role === 'ADMIN' ? 'primary' : 'default'} size='small' variant='tonal' /></Grid>
+              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Status</Typography><Chip label={viewItem.isActive ? 'Active' : 'Inactive'} color={viewItem.isActive ? 'success' : 'error'} size='small' variant='tonal' /></Grid>
+              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Phone</Typography><Typography>{viewItem.phone || '-'}</Typography></Grid>
+              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Last Login</Typography><Typography>{viewItem.lastLoginAt ? new Date(viewItem.lastLoginAt).toLocaleString() : '-'}</Typography></Grid>
+              {viewItem.permissions && viewItem.permissions.length > 0 && (
+                <Grid size={{ xs: 12 }}><Typography variant='body2' color='text.secondary' className='mbe-1'>Permissions</Typography><div className='flex flex-wrap gap-1'>{viewItem.permissions.map(p => <Chip key={p} label={p} size='small' variant='tonal' />)}</div></Grid>
+              )}
+            </Grid>
+          )}
+        </DialogContent>
+        <DialogActions><Button onClick={() => setViewItem(null)}>Close</Button></DialogActions>
       </Dialog>
 
       <ConfirmDialog

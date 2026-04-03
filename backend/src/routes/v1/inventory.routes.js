@@ -9,6 +9,7 @@ const { transferSchema } = require('../../validators/inventory.validator');
 
 router.use(authenticate, companyScope);
 router.get('/', checkPermission('inventory.view'), c.getAll);
+router.get('/summary', checkPermission('inventory.view'), c.getSummary);
 router.get('/transfers', checkPermission('inventory.view'), c.getTransfers);
 router.get('/distributor/:id', checkPermission('inventory.view'), c.getByDistributor);
 router.post('/transfer', checkPermission('inventory.transfer'), validate(transferSchema), c.transfer);

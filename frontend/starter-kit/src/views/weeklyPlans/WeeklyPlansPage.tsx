@@ -32,6 +32,8 @@ const WeeklyPlansPage = () => {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
+  const isFormValid = form.weekStartDate !== '' && form.weekEndDate !== ''
+
   const fetchData = async () => {
     setLoading(true)
     try { const { data: r } = await weeklyPlansService.list({ limit: 100 }); setData(r.data || []) }
@@ -70,11 +72,11 @@ const WeeklyPlansPage = () => {
         <DialogTitle>Create Weekly Plan</DialogTitle>
         <DialogContent>
           <Grid container spacing={4} className='pbs-4'>
-            <Grid size={{ xs: 6 }}><CustomTextField fullWidth label='Week Start' type='date' value={form.weekStartDate} onChange={e => setForm(p => ({ ...p, weekStartDate: e.target.value }))} slotProps={{ inputLabel: { shrink: true } }} /></Grid>
-            <Grid size={{ xs: 6 }}><CustomTextField fullWidth label='Week End' type='date' value={form.weekEndDate} onChange={e => setForm(p => ({ ...p, weekEndDate: e.target.value }))} slotProps={{ inputLabel: { shrink: true } }} /></Grid>
+            <Grid size={{ xs: 6 }}><CustomTextField required fullWidth label='Week Start' type='date' value={form.weekStartDate} onChange={e => setForm(p => ({ ...p, weekStartDate: e.target.value }))} slotProps={{ inputLabel: { shrink: true } }} /></Grid>
+            <Grid size={{ xs: 6 }}><CustomTextField required fullWidth label='Week End' type='date' value={form.weekEndDate} onChange={e => setForm(p => ({ ...p, weekEndDate: e.target.value }))} slotProps={{ inputLabel: { shrink: true } }} /></Grid>
           </Grid>
         </DialogContent>
-        <DialogActions><Button onClick={() => setOpen(false)} disabled={saving}>Cancel</Button><Button variant='contained' onClick={handleSave} disabled={saving} startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}>{saving ? 'Saving...' : 'Create'}</Button></DialogActions>
+        <DialogActions><Button onClick={() => setOpen(false)} disabled={saving}>Cancel</Button><Button variant='contained' onClick={handleSave} disabled={saving || !isFormValid} startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}>{saving ? 'Saving...' : 'Create'}</Button></DialogActions>
       </Dialog>
     </Card>
   )

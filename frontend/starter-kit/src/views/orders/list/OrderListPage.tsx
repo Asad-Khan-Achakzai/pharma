@@ -48,9 +48,6 @@ const OrderListPage = () => {
 
   const columns = useMemo<ColumnDef<Order, any>[]>(() => [
     columnHelper.accessor('orderNumber', { header: 'Order #', cell: ({ row }) => <Typography fontWeight={500} color='primary' className='cursor-pointer' onClick={() => router.push(`/orders/${row.original._id}`)}>{row.original.orderNumber}</Typography> }),
-    columnHelper.display({ id: 'pharmacy', header: 'Pharmacy', cell: ({ row }) => row.original.pharmacyId?.name || '-' }),
-    columnHelper.display({ id: 'distributor', header: 'Distributor', cell: ({ row }) => row.original.distributorId?.name || '-' }),
-    columnHelper.display({ id: 'rep', header: 'Rep', cell: ({ row }) => row.original.medicalRepId?.name || '-' }),
     columnHelper.accessor('status', { header: 'Status', cell: ({ row }) => <Chip label={row.original.status} color={statusColors[row.original.status] || 'default'} size='small' variant='tonal' /> }),
     columnHelper.accessor('totalOrderedAmount', { header: 'Amount', cell: ({ row }) => `₨ ${row.original.totalOrderedAmount?.toFixed(2)}` }),
     columnHelper.display({ id: 'date', header: 'Date', cell: ({ row }) => new Date(row.original.createdAt).toLocaleDateString() }),
@@ -64,12 +61,11 @@ const OrderListPage = () => {
 
   return (
     <Card>
-      <CardHeader title='Orders' action={
-        <div className='flex gap-4 items-center'>
-          <CustomTextField value={globalFilter ?? ''} onChange={(e) => setGlobalFilter(e.target.value)} placeholder='Search...' />
-          {canCreate && <Button variant='contained' startIcon={<i className='tabler-plus' />} onClick={() => router.push('/orders/add')}>Create Order</Button>}
-        </div>
-      } />
+      <CardHeader title='Orders' />
+      <div className='flex flex-wrap items-center justify-between gap-4 pli-6 pbe-4'>
+        <CustomTextField value={globalFilter ?? ''} onChange={(e) => setGlobalFilter(e.target.value)} placeholder='Search...' />
+        {canCreate && <Button variant='contained' startIcon={<i className='tabler-plus' />} onClick={() => router.push('/orders/add')}>Create Order</Button>}
+      </div>
       <div className='overflow-x-auto'>
         <table className={tableStyles.table}>
           <thead>{table.getHeaderGroups().map(hg => <tr key={hg.id}>{hg.headers.map(h => <th key={h.id}>{h.isPlaceholder ? null : <div className={h.column.getCanSort() ? 'cursor-pointer select-none' : ''} onClick={h.column.getToggleSortingHandler()}>{flexRender(h.column.columnDef.header, h.getContext())}{{ asc: ' 🔼', desc: ' 🔽' }[h.column.getIsSorted() as string] ?? null}</div>}</th>)}</tr>)}</thead>

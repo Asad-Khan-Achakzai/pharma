@@ -5,8 +5,7 @@ const transferSchema = Joi.object({
   items: Joi.array().items(
     Joi.object({
       productId: Joi.string().required(),
-      quantity: Joi.number().integer().min(1).required(),
-      shippingCostPerUnit: Joi.number().min(0).default(0)
+      quantity: Joi.number().integer().min(1).required()
     })
   ).min(1).required(),
   totalShippingCost: Joi.number().min(0).default(0),
