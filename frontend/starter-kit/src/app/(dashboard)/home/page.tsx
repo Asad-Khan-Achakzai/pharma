@@ -1,3 +1,3 @@
-export default function Page() {
-  return <h1>Home page!</h1>
-}
+import DashboardPage from '@/views/dashboard/DashboardPage'
+const Page = () => <DashboardPage />
+export default Page

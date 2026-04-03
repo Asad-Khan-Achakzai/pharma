@@ -1,5 +1,5 @@
 // MUI Imports
-import InitColorSchemeScript from '@mui/material/InitColorSchemeScript'
+import { InitColorSchemeScript } from '@mui/material'
 
 // Third-party Imports
 import 'react-perfect-scrollbar/dist/css/styles.css'

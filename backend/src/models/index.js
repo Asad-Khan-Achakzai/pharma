@@ -1,0 +1,22 @@
+module.exports = {
+  Company: require('./Company'),
+  User: require('./User'),
+  Product: require('./Product'),
+  Distributor: require('./Distributor'),
+  DistributorInventory: require('./DistributorInventory'),
+  StockTransfer: require('./StockTransfer'),
+  Pharmacy: require('./Pharmacy'),
+  Doctor: require('./Doctor'),
+  DoctorActivity: require('./DoctorActivity'),
+  Order: require('./Order'),
+  DeliveryRecord: require('./DeliveryRecord'),
+  ReturnRecord: require('./ReturnRecord'),
+  Ledger: require('./Ledger'),
+  Payment: require('./Payment'),
+  Transaction: require('./Transaction'),
+  MedRepTarget: require('./MedRepTarget'),
+  WeeklyPlan: require('./WeeklyPlan'),
+  Expense: require('./Expense'),
+  Payroll: require('./Payroll'),
+  AuditLog: require('./AuditLog')
+};

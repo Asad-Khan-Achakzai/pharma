@@ -1,16 +1,116 @@
 // Type Imports
 import type { VerticalMenuDataType } from '@/types/menuTypes'
 
-const verticalMenuData = (): VerticalMenuDataType[] => [
+export type MenuItemWithPermission = VerticalMenuDataType & {
+  permission?: string
+  children?: MenuItemWithPermission[]
+}
+
+const verticalMenuData = (): MenuItemWithPermission[] => [
   {
-    label: 'Home',
+    label: 'Dashboard',
     href: '/home',
-    icon: 'tabler-smart-home'
+    icon: 'tabler-smart-home',
+    permission: 'dashboard.view'
   },
   {
-    label: 'About',
-    href: '/about',
-    icon: 'tabler-info-circle'
+    label: 'Products',
+    href: '/products/list',
+    icon: 'tabler-pill',
+    permission: 'products.view'
+  },
+  {
+    label: 'Distributors',
+    href: '/distributors/list',
+    icon: 'tabler-truck',
+    permission: 'distributors.view'
+  },
+  {
+    label: 'Inventory',
+    icon: 'tabler-packages',
+    permission: 'inventory.view',
+    children: [
+      { label: 'Overview', href: '/inventory' },
+      { label: 'Stock Transfer', href: '/inventory/transfer' }
+    ]
+  },
+  {
+    label: 'Pharmacies',
+    href: '/pharmacies/list',
+    icon: 'tabler-building-store',
+    permission: 'pharmacies.view'
+  },
+  {
+    label: 'Doctors',
+    href: '/doctors/list',
+    icon: 'tabler-stethoscope',
+    permission: 'doctors.view'
+  },
+  {
+    label: 'Orders',
+    icon: 'tabler-clipboard-list',
+    permission: 'orders.view',
+    children: [
+      { label: 'All Orders', href: '/orders/list' },
+      { label: 'Create Order', href: '/orders/add', permission: 'orders.create' }
+    ]
+  },
+  {
+    label: 'Payments',
+    icon: 'tabler-cash',
+    permission: 'payments.view',
+    children: [
+      { label: 'All Payments', href: '/payments/list' },
+      { label: 'Record Payment', href: '/payments/add', permission: 'payments.create' }
+    ]
+  },
+  {
+    label: 'Ledger',
+    href: '/ledger',
+    icon: 'tabler-report-money',
+    permission: 'ledger.view'
+  },
+  {
+    label: 'Targets',
+    href: '/targets',
+    icon: 'tabler-target-arrow',
+    permission: 'targets.view'
+  },
+  {
+    label: 'Weekly Plans',
+    href: '/weekly-plans',
+    icon: 'tabler-calendar-week',
+    permission: 'weeklyPlans.view'
+  },
+  {
+    label: 'Expenses',
+    href: '/expenses/list',
+    icon: 'tabler-receipt',
+    permission: 'expenses.view'
+  },
+  {
+    label: 'Payroll',
+    href: '/payroll',
+    icon: 'tabler-wallet',
+    permission: 'payroll.view'
+  },
+  {
+    label: 'Reports',
+    href: '/reports',
+    icon: 'tabler-chart-bar',
+    permission: 'reports.view'
+  },
+  {
+    label: 'Users',
+    href: '/users/list',
+    icon: 'tabler-users',
+    permission: 'users.view'
+  },
+  {
+    label: 'Audit Log',
+    href: '/audit-log',
+    icon: 'tabler-history',
+    permission: 'users.view'
   }
 ]
 

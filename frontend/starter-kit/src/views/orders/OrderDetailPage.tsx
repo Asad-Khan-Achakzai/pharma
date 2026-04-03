@@ -1,0 +1,199 @@
+'use client'
+
+import { useState, useEffect, use } from 'react'
+import Card from '@mui/material/Card'
+import CardHeader from '@mui/material/CardHeader'
+import CardContent from '@mui/material/CardContent'
+import Button from '@mui/material/Button'
+import Grid from '@mui/material/Grid'
+import Typography from '@mui/material/Typography'
+import Chip from '@mui/material/Chip'
+import Divider from '@mui/material/Divider'
+import Dialog from '@mui/material/Dialog'
+import DialogTitle from '@mui/material/DialogTitle'
+import DialogContent from '@mui/material/DialogContent'
+import DialogActions from '@mui/material/DialogActions'
+import CircularProgress from '@mui/material/CircularProgress'
+import { showApiError, showSuccess } from '@/utils/apiErrors'
+import { useAuth } from '@/contexts/AuthContext'
+import CustomTextField from '@core/components/mui/TextField'
+import { ordersService } from '@/services/orders.service'
+
+const statusColors: Record<string, 'success' | 'warning' | 'info' | 'error' | 'default'> = {
+  PENDING: 'warning', PARTIALLY_DELIVERED: 'info', DELIVERED: 'success', PARTIALLY_RETURNED: 'warning', RETURNED: 'error', CANCELLED: 'default'
+}
+
+const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: string }> }) => {
+  const params = use(paramsPromise)
+  const [order, setOrder] = useState<any>(null)
+  const [deliverOpen, setDeliverOpen] = useState(false)
+  const [returnOpen, setReturnOpen] = useState(false)
+  const [deliverItems, setDeliverItems] = useState<any[]>([])
+  const [returnItems, setReturnItems] = useState<any[]>([])
+  const [loadError, setLoadError] = useState(false)
+  const [delivering, setDelivering] = useState(false)
+  const [returning, setReturning] = useState(false)
+  const { hasPermission } = useAuth()
+  const hasDeliverPerm = hasPermission('orders.deliver')
+  const hasReturnPerm = hasPermission('orders.return')
+
+  const fetchOrder = async () => {
+    try {
+      const { data: res } = await ordersService.getById(params.id)
+      setOrder(res.data)
+      setLoadError(false)
+    } catch (err) {
+      setLoadError(true)
+      showApiError(err, 'Failed to load order')
+    }
+  }
+
+  useEffect(() => { fetchOrder() }, [params.id])
+
+  const openDeliver = () => {
+    const items = order.items.filter((i: any) => i.deliveredQty < i.quantity).map((i: any) => ({ productId: i.productId?._id || i.productId, productName: i.productName, maxQty: i.quantity - i.deliveredQty, quantity: i.quantity - i.deliveredQty }))
+    setDeliverItems(items)
+    setDeliverOpen(true)
+  }
+
+  const openReturn = () => {
+    const items = order.items.filter((i: any) => i.deliveredQty > i.returnedQty).map((i: any) => ({ productId: i.productId?._id || i.productId, productName: i.productName, maxQty: i.deliveredQty - i.returnedQty, quantity: 0, reason: '' }))
+    setReturnItems(items)
+    setReturnOpen(true)
+  }
+
+  const handleDeliver = async () => {
+    const validItems = deliverItems.filter(i => i.quantity > 0).map(i => ({ productId: i.productId, quantity: i.quantity }))
+    if (validItems.length === 0) { showApiError(null, 'Select items to deliver'); return }
+    setDelivering(true)
+    try {
+      await ordersService.deliver(params.id, { items: validItems })
+      showSuccess('Delivery recorded'); setDeliverOpen(false); fetchOrder()
+    } catch (err) { showApiError(err, 'Delivery failed') }
+    finally { setDelivering(false) }
+  }
+
+  const handleReturn = async () => {
+    const validItems = returnItems.filter(i => i.quantity > 0).map(i => ({ productId: i.productId, quantity: i.quantity, reason: i.reason }))
+    if (validItems.length === 0) { showApiError(null, 'Select items to return'); return }
+    setReturning(true)
+    try {
+      await ordersService.returnOrder(params.id, { items: validItems })
+      showSuccess('Return recorded'); setReturnOpen(false); fetchOrder()
+    } catch (err) { showApiError(err, 'Return failed') }
+    finally { setReturning(false) }
+  }
+
+  if (loadError) return <Card><CardContent><Typography color='error'>Failed to load order. It may not exist or you may not have access.</Typography></CardContent></Card>
+  if (!order) return <Card><CardContent className='flex justify-center items-center min-bs-[200px]'><CircularProgress /></CardContent></Card>
+
+  const canDeliver = hasDeliverPerm && ['PENDING', 'PARTIALLY_DELIVERED'].includes(order.status)
+  const canReturn = hasReturnPerm && ['DELIVERED', 'PARTIALLY_DELIVERED', 'PARTIALLY_RETURNED'].includes(order.status)
+
+  return (
+    <Grid container spacing={6}>
+      <Grid size={{ xs: 12, md: 8 }}>
+        <Card>
+          <CardHeader title={`Order ${order.orderNumber}`} action={
+            <div className='flex gap-2'>
+              {canDeliver && <Button variant='contained' color='success' onClick={openDeliver}>Deliver</Button>}
+              {canReturn && <Button variant='outlined' color='error' onClick={openReturn}>Return</Button>}
+            </div>
+          } />
+          <CardContent>
+            <div className='flex gap-4 mbe-4'>
+              <Chip label={order.status} color={statusColors[order.status] || 'default'} />
+              <Typography>Total: ₨ {order.totalOrderedAmount?.toFixed(2)}</Typography>
+              <Typography>Date: {new Date(order.createdAt).toLocaleDateString()}</Typography>
+            </div>
+            <Divider className='mbe-4' />
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 6, sm: 3 }}><Typography variant='body2' color='text.secondary'>Pharmacy</Typography><Typography>{order.pharmacyId?.name}</Typography></Grid>
+              <Grid size={{ xs: 6, sm: 3 }}><Typography variant='body2' color='text.secondary'>Distributor</Typography><Typography>{order.distributorId?.name}</Typography></Grid>
+              <Grid size={{ xs: 6, sm: 3 }}><Typography variant='body2' color='text.secondary'>Doctor</Typography><Typography>{order.doctorId?.name || '-'}</Typography></Grid>
+              <Grid size={{ xs: 6, sm: 3 }}><Typography variant='body2' color='text.secondary'>Rep</Typography><Typography>{order.medicalRepId?.name}</Typography></Grid>
+            </Grid>
+            <Divider className='mbs-4 mbe-4' />
+            <Typography variant='h6' className='mbe-2'>Items</Typography>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd' }}><th style={{ padding: 8 }}>Product</th><th style={{ padding: 8 }}>Ordered</th><th style={{ padding: 8 }}>Delivered</th><th style={{ padding: 8 }}>Returned</th><th style={{ padding: 8 }}>TP</th><th style={{ padding: 8 }}>Casting</th></tr></thead>
+              <tbody>{order.items.map((item: any, i: number) => (
+                <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
+                  <td style={{ padding: 8 }}>{item.productName || item.productId?.name}</td>
+                  <td style={{ padding: 8 }}>{item.quantity}</td>
+                  <td style={{ padding: 8 }}>{item.deliveredQty}</td>
+                  <td style={{ padding: 8 }}>{item.returnedQty}</td>
+                  <td style={{ padding: 8 }}>₨ {item.tpAtTime?.toFixed(2)}</td>
+                  <td style={{ padding: 8 }}>₨ {item.castingAtTime?.toFixed(2)}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </CardContent>
+        </Card>
+      </Grid>
+
+      <Grid size={{ xs: 12, md: 4 }}>
+        {order.deliveries?.length > 0 && (
+          <Card className='mbe-4'>
+            <CardHeader title='Delivery History' />
+            <CardContent>
+              {order.deliveries.map((d: any) => (
+                <div key={d._id} className='mbe-3 pbe-3' style={{ borderBottom: '1px solid #eee' }}>
+                  <Typography fontWeight={500}>{d.invoiceNumber}</Typography>
+                  <Typography variant='body2'>Amount: ₨ {d.totalAmount?.toFixed(2)} | Profit: ₨ {d.totalProfit?.toFixed(2)}</Typography>
+                  <Typography variant='body2' color='text.secondary'>{new Date(d.deliveredAt).toLocaleString()} by {d.deliveredBy?.name}</Typography>
+                  {d.pdfUrl && <Button size='small' href={`${process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '')}${d.pdfUrl}`} target='_blank'>Download PDF</Button>}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+        {order.returns?.length > 0 && (
+          <Card>
+            <CardHeader title='Return History' />
+            <CardContent>
+              {order.returns.map((r: any) => (
+                <div key={r._id} className='mbe-3 pbe-3' style={{ borderBottom: '1px solid #eee' }}>
+                  <Typography variant='body2'>Amount: ₨ {r.totalAmount?.toFixed(2)}</Typography>
+                  <Typography variant='body2' color='text.secondary'>{new Date(r.returnedAt).toLocaleString()} by {r.returnedBy?.name}</Typography>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+      </Grid>
+
+      <Dialog open={deliverOpen} onClose={() => setDeliverOpen(false)} maxWidth='sm' fullWidth>
+        <DialogTitle>Deliver Items</DialogTitle>
+        <DialogContent>
+          {deliverItems.map((item, i) => (
+            <div key={i} className='flex gap-4 items-center mbe-3 pbs-2'>
+              <Typography className='flex-1'>{item.productName}</Typography>
+              <CustomTextField label={`Max: ${item.maxQty}`} type='number' value={item.quantity}
+                onChange={e => setDeliverItems(prev => prev.map((it, idx) => idx === i ? { ...it, quantity: Math.min(+e.target.value, it.maxQty) } : it))}
+                style={{ width: 120 }} />
+            </div>
+          ))}
+        </DialogContent>
+        <DialogActions><Button onClick={() => setDeliverOpen(false)}>Cancel</Button><Button variant='contained' color='success' onClick={handleDeliver} disabled={delivering}>{delivering ? 'Confirming...' : 'Confirm Delivery'}</Button></DialogActions>
+      </Dialog>
+
+      <Dialog open={returnOpen} onClose={() => setReturnOpen(false)} maxWidth='sm' fullWidth>
+        <DialogTitle>Return Items</DialogTitle>
+        <DialogContent>
+          {returnItems.map((item, i) => (
+            <div key={i} className='flex gap-4 items-center mbe-3 pbs-2'>
+              <Typography className='flex-1'>{item.productName}</Typography>
+              <CustomTextField label={`Max: ${item.maxQty}`} type='number' value={item.quantity}
+                onChange={e => setReturnItems(prev => prev.map((it, idx) => idx === i ? { ...it, quantity: Math.min(+e.target.value, it.maxQty) } : it))}
+                style={{ width: 120 }} />
+            </div>
+          ))}
+        </DialogContent>
+        <DialogActions><Button onClick={() => setReturnOpen(false)}>Cancel</Button><Button variant='contained' color='error' onClick={handleReturn} disabled={returning}>{returning ? 'Confirming...' : 'Confirm Return'}</Button></DialogActions>
+      </Dialog>
+    </Grid>
+  )
+}
+
+export default OrderDetailPage

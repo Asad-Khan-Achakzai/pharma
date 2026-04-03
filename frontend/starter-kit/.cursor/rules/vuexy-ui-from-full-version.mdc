@@ -1,0 +1,22 @@
+---
+description: Reuse Vuexy UI from full-version; do not invent parallel UI components
+globs: "**/*"
+alwaysApply: true
+---
+
+# Vuexy UI source of truth
+
+When adding or changing UI in this app:
+
+1. **Prefer existing Vuexy pieces** from the sibling full template: `../full-version` (same parent folder as this `starter-kit`). Do **not** build bespoke UI primitives (buttons, cards, dialogs, layout chrome, form patterns, tables, charts wrappers, etc.) when the full template already provides an equivalent.
+
+2. **How to reuse**
+   - Copy the relevant files from `full-version` into this project (typically under `src/components`, `src/views`, `src/libs`, routes under `src/app`, and types/utils as needed).
+   - Add npm dependencies from `full-version/package.json` only for features you actually port.
+   - Keep imports consistent with existing path aliases (`@components/*`, `@core/*`, `@layouts/*`, `@menu/*`, etc.).
+
+3. **Core folders** (`src/@core`, `src/@layouts`, `src/@menu`): do not edit in place. To customize, follow Vuexy’s pattern—copy into `src/components` (or project-specific folders) and change imports—per official “Customizing our components” guidance.
+
+4. **MUI**: use MUI and the template’s wrappers/overrides; for standard MUI usage, align with patterns already used in `full-version`.
+
+This rule exists so the product stays visually and structurally aligned with Vuexy and avoids duplicate, one-off components.
