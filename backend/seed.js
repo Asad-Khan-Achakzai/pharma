@@ -177,12 +177,12 @@ async function seed() {
 
   // ─── Pharmacies ───
   const pharmaciesData = [
-    { name: 'Al-Shifa Pharmacy',        address: 'F-8 Markaz, Islamabad',   city: 'Islamabad',  state: 'ICT',    phone: '+92-51-2223344' },
-    { name: 'Aga Khan Pharmacy',         address: 'Stadium Road, Karachi',   city: 'Karachi',    state: 'Sindh',  phone: '+92-21-5556677' },
-    { name: 'Lahore Medical Store',      address: 'Mall Road, Lahore',       city: 'Lahore',     state: 'Punjab', phone: '+92-42-1119988' },
-    { name: 'Faisal Pharmacy',           address: 'Satellite Town, Rawalpindi', city: 'Rawalpindi', state: 'Punjab', phone: '+92-51-3332211' },
-    { name: 'Medics Pharmacy',           address: 'Gulshan-e-Iqbal, Karachi', city: 'Karachi',   state: 'Sindh',  phone: '+92-21-6667788' },
-    { name: 'Care Plus Pharmacy',        address: 'DHA Phase 5, Lahore',     city: 'Lahore',     state: 'Punjab', phone: '+92-42-7778899' }
+    { name: 'Al-Shifa Pharmacy',        address: 'F-8 Markaz, Islamabad',   city: 'Islamabad',  state: 'ICT',    phone: '+92-51-2223344', discountOnTP: 2 },
+    { name: 'Aga Khan Pharmacy',         address: 'Stadium Road, Karachi',   city: 'Karachi',    state: 'Sindh',  phone: '+92-21-5556677', discountOnTP: 3 },
+    { name: 'Lahore Medical Store',      address: 'Mall Road, Lahore',       city: 'Lahore',     state: 'Punjab', phone: '+92-42-1119988', discountOnTP: 2 },
+    { name: 'Faisal Pharmacy',           address: 'Satellite Town, Rawalpindi', city: 'Rawalpindi', state: 'Punjab', phone: '+92-51-3332211', discountOnTP: 4 },
+    { name: 'Medics Pharmacy',           address: 'Gulshan-e-Iqbal, Karachi', city: 'Karachi',   state: 'Sindh',  phone: '+92-21-6667788', discountOnTP: 2 },
+    { name: 'Care Plus Pharmacy',        address: 'DHA Phase 5, Lahore',     city: 'Lahore',     state: 'Punjab', phone: '+92-42-7778899', discountOnTP: 3 }
   ];
 
   const pharmacies = await Pharmacy.insertMany(

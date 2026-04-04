@@ -10,6 +10,7 @@ const pharmacySchema = new mongoose.Schema(
     state: { type: String, trim: true },
     phone: { type: String, trim: true },
     email: { type: String, trim: true, lowercase: true },
+    discountOnTP: { type: Number, default: 0 },
     isActive: { type: Boolean, default: true }
   },
   { timestamps: true }

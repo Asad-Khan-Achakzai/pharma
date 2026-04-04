@@ -24,7 +24,7 @@ import tableStyles from '@core/styles/table.module.css'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
 
-type Pharmacy = { _id: string; name: string; city: string; phone: string; email: string; address: string; isActive: boolean }
+type Pharmacy = { _id: string; name: string; city: string; phone: string; email: string; address: string; discountOnTP: number; isActive: boolean }
 
 const fuzzyFilter: FilterFn<any> = (row, columnId, value, addMeta) => { const r = rankItem(row.getValue(columnId), value); addMeta({ itemRank: r }); return r.passed }
 const columnHelper = createColumnHelper<Pharmacy>()
@@ -34,7 +34,7 @@ const PharmacyListPage = () => {
   const [globalFilter, setGlobalFilter] = useState('')
   const [open, setOpen] = useState(false)
   const [editItem, setEditItem] = useState<Pharmacy | null>(null)
-  const [form, setForm] = useState({ name: '', address: '', city: '', state: '', phone: '', email: '' })
+  const [form, setForm] = useState({ name: '', address: '', city: '', state: '', phone: '', email: '', discountOnTP: 0 })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -57,8 +57,8 @@ const PharmacyListPage = () => {
   useEffect(() => { fetchData() }, [])
 
   const handleOpen = (item?: Pharmacy) => {
-    if (item) { setEditItem(item); setForm({ name: item.name, address: item.address || '', city: item.city || '', state: '', phone: item.phone || '', email: item.email || '' }) }
-    else { setEditItem(null); setForm({ name: '', address: '', city: '', state: '', phone: '', email: '' }) }
+    if (item) { setEditItem(item); setForm({ name: item.name, address: item.address || '', city: item.city || '', state: '', phone: item.phone || '', email: item.email || '', discountOnTP: item.discountOnTP ?? 0 }) }
+    else { setEditItem(null); setForm({ name: '', address: '', city: '', state: '', phone: '', email: '', discountOnTP: 0 }) }
     setOpen(true)
   }
 
@@ -86,7 +86,7 @@ const PharmacyListPage = () => {
     columnHelper.accessor('name', { header: 'Name', cell: ({ row }) => <Typography fontWeight={500}>{row.original.name}</Typography> }),
     columnHelper.accessor('city', { header: 'City' }),
     columnHelper.accessor('phone', { header: 'Phone' }),
-    columnHelper.accessor('email', { header: 'Email' }),
+    columnHelper.accessor('discountOnTP', { header: 'Disc. on TP %', cell: ({ row }) => `${row.original.discountOnTP ?? 0}%` }),
     columnHelper.display({ id: 'actions', header: 'Actions', cell: ({ row }) => (
       <div className='flex gap-1'>
         <IconButton size='small' onClick={() => setViewItem(row.original)}><i className='tabler-eye text-textSecondary' /></IconButton>
@@ -126,6 +126,7 @@ const PharmacyListPage = () => {
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>City</Typography><Typography>{viewItem.city || '-'}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Phone</Typography><Typography>{viewItem.phone || '-'}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Email</Typography><Typography>{viewItem.email || '-'}</Typography></Grid>
+              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Discount on TP</Typography><Typography>{viewItem.discountOnTP ?? 0}%</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Status</Typography><Chip label={viewItem.isActive ? 'Active' : 'Inactive'} color={viewItem.isActive ? 'success' : 'error'} size='small' variant='tonal' /></Grid>
             </Grid>
           )}
@@ -142,6 +143,7 @@ const PharmacyListPage = () => {
             <Grid size={{ xs: 12 }}><CustomTextField fullWidth label='Address' value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} /></Grid>
             <Grid size={{ xs: 6 }}><CustomTextField fullWidth label='Phone' value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} /></Grid>
             <Grid size={{ xs: 6 }}><CustomTextField fullWidth label='Email' value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} /></Grid>
+            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='Discount on TP %' type='number' value={form.discountOnTP} onChange={e => setForm(p => ({ ...p, discountOnTP: +e.target.value }))} helperText='Default pharmacy discount applied on trade price for new orders' /></Grid>
           </Grid>
         </DialogContent>
         <DialogActions><Button onClick={() => setOpen(false)}>Cancel</Button><Button variant='contained' onClick={handleSave} disabled={saving || !isFormValid} startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}>{saving ? 'Saving...' : 'Save'}</Button></DialogActions>

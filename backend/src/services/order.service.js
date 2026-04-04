@@ -66,8 +66,8 @@ const create = async (companyId, data, reqUser) => {
       quantity: item.quantity,
       tpAtTime: product.tp,
       castingAtTime: product.casting,
-      distributorDiscount: item.distributorDiscount || distributor.discountOnTP,
-      clinicDiscount: item.clinicDiscount || 0
+      distributorDiscount: item.distributorDiscount ?? distributor.discountOnTP ?? 0,
+      clinicDiscount: item.clinicDiscount ?? pharmacy.discountOnTP ?? 0
     };
   });
 
@@ -116,6 +116,10 @@ const update = async (companyId, id, data, reqUser) => {
   const before = order.toObject();
   if (data.notes !== undefined) order.notes = data.notes;
   if (data.items) {
+    const [pharmacy, distributor] = await Promise.all([
+      Pharmacy.findOne({ _id: order.pharmacyId, companyId }),
+      Distributor.findOne({ _id: order.distributorId, companyId })
+    ]);
     const productIds = data.items.map((i) => i.productId);
     const products = await Product.find({ _id: { $in: productIds }, companyId, isActive: true });
     const productMap = {};
@@ -127,7 +131,8 @@ const update = async (companyId, id, data, reqUser) => {
       return {
         productId: item.productId, productName: product.name, quantity: item.quantity,
         tpAtTime: product.tp, castingAtTime: product.casting,
-        distributorDiscount: item.distributorDiscount || 0, clinicDiscount: item.clinicDiscount || 0
+        distributorDiscount: item.distributorDiscount ?? distributor?.discountOnTP ?? 0,
+        clinicDiscount: item.clinicDiscount ?? pharmacy?.discountOnTP ?? 0
       };
     });
     order.totalOrderedAmount = roundPKR(order.items.reduce((s, i) => s + i.tpAtTime * i.quantity, 0));

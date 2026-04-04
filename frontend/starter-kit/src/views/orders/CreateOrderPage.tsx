@@ -10,6 +10,7 @@ import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
 import Grid from '@mui/material/Grid'
 import MenuItem from '@mui/material/MenuItem'
+import Typography from '@mui/material/Typography'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import CustomTextField from '@core/components/mui/TextField'
 import { ordersService } from '@/services/orders.service'
@@ -17,6 +18,15 @@ import { pharmaciesService } from '@/services/pharmacies.service'
 import { distributorsService } from '@/services/distributors.service'
 import { productsService } from '@/services/products.service'
 import { doctorsService } from '@/services/doctors.service'
+
+type LineItem = { productId: string; quantity: number; distributorDiscount: number; clinicDiscount: number }
+
+const defaultLineItem = (distDisc: number, pharmDisc: number): LineItem => ({
+  productId: '',
+  quantity: 1,
+  distributorDiscount: distDisc,
+  clinicDiscount: pharmDisc
+})
 
 const CreateOrderPage = () => {
   const router = useRouter()
@@ -28,7 +38,7 @@ const CreateOrderPage = () => {
   const [distributorId, setDistributorId] = useState('')
   const [doctorId, setDoctorId] = useState('')
   const [notes, setNotes] = useState('')
-  const [items, setItems] = useState([{ productId: '', quantity: 1, distributorDiscount: 0, clinicDiscount: 0 }])
+  const [items, setItems] = useState<LineItem[]>([defaultLineItem(0, 0)])
   const [loadingData, setLoadingData] = useState(true)
   const [submitting, setSubmitting] = useState(false)
 
@@ -46,7 +56,27 @@ const CreateOrderPage = () => {
     fetch()
   }, [])
 
-  const addItem = () => setItems(prev => [...prev, { productId: '', quantity: 1, distributorDiscount: 0, clinicDiscount: 0 }])
+  const getDiscountDefaults = () => {
+    const ph = pharmacies.find(p => p._id === pharmacyId)
+    const dist = distributors.find(d => d._id === distributorId)
+    return { d: dist?.discountOnTP ?? 0, p: ph?.discountOnTP ?? 0 }
+  }
+
+  /** When pharmacy or distributor changes (or master list loads), refill line-item discounts from pharmacy/distributor records. */
+  useEffect(() => {
+    if (!pharmacyId || !distributorId) return
+    const ph = pharmacies.find(p => p._id === pharmacyId)
+    const dist = distributors.find(d => d._id === distributorId)
+    if (!ph || !dist) return
+    const d = dist.discountOnTP ?? 0
+    const p = ph.discountOnTP ?? 0
+    setItems(prev => prev.map(it => ({ ...it, distributorDiscount: d, clinicDiscount: p })))
+  }, [pharmacyId, distributorId, pharmacies, distributors])
+
+  const addItem = () => {
+    const { d, p } = getDiscountDefaults()
+    setItems(prev => [...prev, defaultLineItem(d, p)])
+  }
   const removeItem = (i: number) => setItems(prev => prev.filter((_, idx) => idx !== i))
   const updateItem = (i: number, field: string, value: any) => setItems(prev => prev.map((item, idx) => idx === i ? { ...item, [field]: value } : item))
 
@@ -61,6 +91,8 @@ const CreateOrderPage = () => {
     } catch (err) { showApiError(err, 'Failed to create order') }
     finally { setSubmitting(false) }
   }
+
+  const { d: previewDistDisc, p: previewPharmDisc } = pharmacyId && distributorId ? getDiscountDefaults() : { d: 0, p: 0 }
 
   return (
     <Card>
@@ -89,6 +121,14 @@ const CreateOrderPage = () => {
             </CustomTextField>
           </Grid>
 
+          {pharmacyId && distributorId && (
+            <Grid size={{ xs: 12 }}>
+              <Typography variant='body2' color='text.secondary'>
+                Default discounts (on TP): distributor {previewDistDisc}% · pharmacy {previewPharmDisc}% — applied to all lines; you can override per line below.
+              </Typography>
+            </Grid>
+          )}
+
           {items.map((item, i) => (
             <Grid container spacing={3} key={i} size={{ xs: 12 }}>
               <Grid size={{ xs: 12, sm: 3 }}>
@@ -100,10 +140,10 @@ const CreateOrderPage = () => {
                 <CustomTextField required fullWidth label='Qty' type='number' value={item.quantity} onChange={e => updateItem(i, 'quantity', +e.target.value)} />
               </Grid>
               <Grid size={{ xs: 6, sm: 2 }}>
-                <CustomTextField fullWidth label='Dist. Disc. %' type='number' value={item.distributorDiscount} onChange={e => updateItem(i, 'distributorDiscount', +e.target.value)} />
+                <CustomTextField fullWidth label='Dist. Disc. % (on TP)' type='number' value={item.distributorDiscount} onChange={e => updateItem(i, 'distributorDiscount', +e.target.value)} helperText='From distributor' />
               </Grid>
               <Grid size={{ xs: 6, sm: 2 }}>
-                <CustomTextField fullWidth label='Clinic Disc. %' type='number' value={item.clinicDiscount} onChange={e => updateItem(i, 'clinicDiscount', +e.target.value)} />
+                <CustomTextField fullWidth label='Pharmacy Disc. % (on TP)' type='number' value={item.clinicDiscount} onChange={e => updateItem(i, 'clinicDiscount', +e.target.value)} helperText='After distributor discount' />
               </Grid>
               <Grid size={{ xs: 6, sm: 1 }} className='flex items-center'>
                 {items.length > 1 && <IconButton onClick={() => removeItem(i)}><i className='tabler-trash text-error' /></IconButton>}

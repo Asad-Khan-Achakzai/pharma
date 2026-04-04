@@ -6,7 +6,8 @@ const createPharmacySchema = Joi.object({
   city: Joi.string().trim().allow(''),
   state: Joi.string().trim().allow(''),
   phone: Joi.string().trim().allow(''),
-  email: Joi.string().email().trim().allow('')
+  email: Joi.string().email().trim().allow(''),
+  discountOnTP: Joi.number().min(0).max(100).default(0)
 });
 
 const updatePharmacySchema = Joi.object({
@@ -16,6 +17,7 @@ const updatePharmacySchema = Joi.object({
   state: Joi.string().trim().allow(''),
   phone: Joi.string().trim().allow(''),
   email: Joi.string().email().trim().allow(''),
+  discountOnTP: Joi.number().min(0).max(100),
   isActive: Joi.boolean()
 }).min(1);
 
