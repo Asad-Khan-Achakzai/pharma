@@ -221,16 +221,18 @@ async function seed() {
 
   const activityRecords = doctors.map((doc, i) => {
     const invested = [50000, 100000, 75000, 80000, 60000, 120000, 45000, 90000][i];
-    const expected = invested * 3;
-    const achieved = Math.floor(expected * (0.3 + Math.random() * 0.5));
+    const commitment = invested * 3;
+    const achieved = Math.floor(commitment * (0.3 + Math.random() * 0.5));
     return {
       companyId: C,
       doctorId: doc._id,
+      medicalRepId: i % 2 === 0 ? rep1._id : rep2._id,
       investedAmount: invested,
-      expectedSales: expected,
+      commitmentAmount: commitment,
       achievedSales: achieved,
-      roi: roundPKR(((achieved - invested) / invested) * 100),
-      period: { startDate: periodStart, endDate: periodEnd },
+      startDate: periodStart,
+      endDate: periodEnd,
+      status: achieved >= commitment ? 'COMPLETED' : 'ACTIVE',
       createdBy: admin._id
     };
   });

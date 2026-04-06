@@ -3,7 +3,7 @@ const Order = require('../models/Order');
 const DeliveryRecord = require('../models/DeliveryRecord');
 const ReturnRecord = require('../models/ReturnRecord');
 const DistributorInventory = require('../models/DistributorInventory');
-const DoctorActivity = require('../models/DoctorActivity');
+const doctorActivityService = require('./doctorActivity.service');
 const MedRepTarget = require('../models/MedRepTarget');
 const Ledger = require('../models/Ledger');
 const Transaction = require('../models/Transaction');
@@ -255,12 +255,12 @@ const deliver = async (companyId, orderId, deliveryItems, reqUser) => {
       { session, ordered: true }
     );
 
-    if (order.doctorId) {
-      await DoctorActivity.updateMany(
-        { companyId, doctorId: order.doctorId, 'period.startDate': { $lte: new Date() }, 'period.endDate': { $gte: new Date() } },
-        { $inc: { achievedSales: totalAmount } },
-        { session }
-      );
+    if (order.doctorId && tpSubtotal > 0) {
+      await doctorActivityService.applyDeliveryTp(session, companyId, {
+        doctorId: order.doctorId,
+        tpAmount: tpSubtotal,
+        deliveredAt: delivery.deliveredAt
+      });
     }
 
     const month = new Date().toISOString().slice(0, 7);
@@ -316,6 +316,7 @@ const returnOrder = async (companyId, orderId, returnItems, reqUser) => {
     let totalAmount = 0;
     let totalCost = 0;
     let totalPacks = 0;
+    let tpReturnTotal = 0;
 
     for (const rItem of returnItems) {
       const orderItem = order.items.find((i) => i.productId.toString() === rItem.productId);
@@ -360,7 +361,10 @@ const returnOrder = async (companyId, orderId, returnItems, reqUser) => {
       totalAmount += returnLineAmount;
       totalCost += roundPKR(avgCostAtTime * rItem.quantity);
       totalPacks += rItem.quantity;
+      tpReturnTotal += roundPKR(orderItem.tpAtTime * rItem.quantity);
     }
+
+    tpReturnTotal = roundPKR(tpReturnTotal);
 
     const totalProfit = roundPKR(totalAmount - totalCost);
 
@@ -379,12 +383,12 @@ const returnOrder = async (companyId, orderId, returnItems, reqUser) => {
       { session, ordered: true }
     );
 
-    if (order.doctorId) {
-      await DoctorActivity.updateMany(
-        { companyId, doctorId: order.doctorId, 'period.startDate': { $lte: new Date() }, 'period.endDate': { $gte: new Date() } },
-        { $inc: { achievedSales: -totalAmount } },
-        { session }
-      );
+    if (order.doctorId && tpReturnTotal > 0) {
+      await doctorActivityService.applyReturnTp(session, companyId, {
+        doctorId: order.doctorId,
+        tpAmount: tpReturnTotal,
+        returnedAt: returnRecord.returnedAt
+      });
     }
 
     const month = new Date().toISOString().slice(0, 7);

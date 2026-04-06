@@ -86,6 +86,13 @@ const WEEKLY_PLAN_STATUS = {
   REVIEWED: 'REVIEWED'
 };
 
+/** Doctor investment / commitment tracking (TP-based achieved sales) */
+const DOCTOR_ACTIVITY_STATUS = {
+  ACTIVE: 'ACTIVE',
+  COMPLETED: 'COMPLETED',
+  FAILED: 'FAILED'
+};
+
 module.exports = {
   ROLES,
   ORDER_STATUS,
@@ -99,5 +106,6 @@ module.exports = {
   PAYMENT_METHOD,
   EXPENSE_CATEGORY,
   PAYROLL_STATUS,
-  WEEKLY_PLAN_STATUS
+  WEEKLY_PLAN_STATUS,
+  DOCTOR_ACTIVITY_STATUS
 };

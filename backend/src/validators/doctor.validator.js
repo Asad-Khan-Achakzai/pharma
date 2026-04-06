@@ -38,27 +38,7 @@ const updateDoctorSchema = Joi.object({
   isActive: Joi.boolean()
 }).min(1);
 
-const createDoctorActivitySchema = Joi.object({
-  doctorId: Joi.string().required(),
-  investedAmount: Joi.number().required().min(0),
-  expectedSales: Joi.number().required().min(0),
-  period: Joi.object({
-    startDate: Joi.date().required(),
-    endDate: Joi.date().required().greater(Joi.ref('startDate'))
-  }).required()
-});
-
-const updateDoctorActivitySchema = Joi.object({
-  investedAmount: Joi.number().min(0),
-  expectedSales: Joi.number().min(0),
-  period: Joi.object({
-    startDate: Joi.date().required(),
-    endDate: Joi.date().required().greater(Joi.ref('startDate'))
-  })
-}).min(1);
-
 module.exports = {
   createPharmacySchema, updatePharmacySchema,
-  createDoctorSchema, updateDoctorSchema,
-  createDoctorActivitySchema, updateDoctorActivitySchema
+  createDoctorSchema, updateDoctorSchema
 };

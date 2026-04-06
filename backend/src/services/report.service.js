@@ -164,12 +164,12 @@ const doctorROI = async (companyId) => {
     {
       $project: {
         doctorName: '$doctor.name', specialization: '$doctor.specialization',
-        investedAmount: 1, expectedSales: 1, achievedSales: 1,
-        roi: { $cond: [{ $gt: ['$investedAmount', 0] }, { $multiply: [{ $divide: ['$achievedSales', '$investedAmount'] }, 100] }, 0] },
-        period: 1
+        investedAmount: 1, commitmentAmount: 1, achievedSales: 1, status: 1,
+        startDate: 1, endDate: 1,
+        roiPercent: { $cond: [{ $gt: ['$investedAmount', 0] }, { $multiply: [{ $divide: ['$achievedSales', '$investedAmount'] }, 100] }, 0] }
       }
     },
-    { $sort: { roi: -1 } }
+    { $sort: { roiPercent: -1 } }
   ]);
 };
 

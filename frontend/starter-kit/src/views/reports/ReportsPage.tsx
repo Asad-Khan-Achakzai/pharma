@@ -179,7 +179,7 @@ const ReportsPage = () => {
                       doctorROI.map((d: any) => (
                         <div key={d._id} className='flex justify-between mbe-2'>
                           <Typography>{d.doctorName}</Typography>
-                          <Typography fontWeight={500}>{d.roi?.toFixed(1)}%</Typography>
+                          <Typography fontWeight={500}>{(d.roiPercent ?? d.roi)?.toFixed(1)}%</Typography>
                         </div>
                       ))
                     )}

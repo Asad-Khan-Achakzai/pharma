@@ -42,9 +42,12 @@ const verticalMenuData = (): MenuItemWithPermission[] => [
   },
   {
     label: 'Doctors',
-    href: '/doctors/list',
     icon: 'tabler-stethoscope',
-    permission: 'doctors.view'
+    permission: 'doctors.view',
+    children: [
+      { label: 'All doctors', href: '/doctors/list' },
+      { label: 'Doctor activities', href: '/doctor-activities/list' }
+    ]
   },
   {
     label: 'Orders',
