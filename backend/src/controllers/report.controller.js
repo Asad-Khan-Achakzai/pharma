@@ -1,5 +1,6 @@
 const reportService = require('../services/report.service');
 const ApiResponse = require('../utils/ApiResponse');
+const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../middleware/asyncHandler');
 
 const dashboard = asyncHandler(async (req, res) => { ApiResponse.success(res, await reportService.dashboard(req.companyId)); });
@@ -12,4 +13,60 @@ const repPerformance = asyncHandler(async (req, res) => { ApiResponse.success(re
 const outstandingReport = asyncHandler(async (req, res) => { ApiResponse.success(res, await reportService.outstanding(req.companyId)); });
 const cashFlow = asyncHandler(async (req, res) => { ApiResponse.success(res, await reportService.cashFlow(req.companyId, req.query.from, req.query.to)); });
 
-module.exports = { dashboard, sales, profit, expenses, inventoryValuation, doctorROI, repPerformance, outstanding: outstandingReport, cashFlow };
+const pharmacyBalances = asyncHandler(async (req, res) => {
+  ApiResponse.success(res, await reportService.pharmacyBalances(req.companyId, req.query));
+});
+const pharmacyBalanceDetail = asyncHandler(async (req, res) => {
+  const data = await reportService.pharmacyBalanceDetail(req.companyId, req.params.id);
+  if (!data) throw new ApiError(404, 'Pharmacy not found');
+  ApiResponse.success(res, data);
+});
+const distributorBalances = asyncHandler(async (req, res) => {
+  ApiResponse.success(res, await reportService.distributorBalances(req.companyId, req.query));
+});
+const distributorBalanceDetail = asyncHandler(async (req, res) => {
+  const data = await reportService.distributorBalanceDetail(req.companyId, req.params.id);
+  if (!data) throw new ApiError(404, 'Distributor not found');
+  ApiResponse.success(res, data);
+});
+const collectionsPeriod = asyncHandler(async (req, res) => {
+  ApiResponse.success(res, await reportService.collectionsPeriod(req.companyId, req.query.from, req.query.to, req.query));
+});
+const settlementsPeriod = asyncHandler(async (req, res) => {
+  ApiResponse.success(res, await reportService.settlementsPeriod(req.companyId, req.query.from, req.query.to, req.query));
+});
+const financialCashSummary = asyncHandler(async (req, res) => {
+  const { from, to, pharmacyId, distributorId, collectorType, direction } = req.query;
+  ApiResponse.success(
+    res,
+    await reportService.financialCashSummary(req.companyId, from, to, {
+      pharmacyId,
+      distributorId,
+      collectorType,
+      direction
+    })
+  );
+});
+const financialOverview = asyncHandler(async (req, res) => {
+  ApiResponse.success(res, await reportService.financialOverview(req.companyId, req.query));
+});
+
+module.exports = {
+  dashboard,
+  sales,
+  profit,
+  expenses,
+  inventoryValuation,
+  doctorROI,
+  repPerformance,
+  outstanding: outstandingReport,
+  cashFlow,
+  pharmacyBalances,
+  pharmacyBalanceDetail,
+  distributorBalances,
+  distributorBalanceDetail,
+  collectionsPeriod,
+  settlementsPeriod,
+  financialCashSummary,
+  financialOverview
+};

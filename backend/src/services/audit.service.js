@@ -10,7 +10,7 @@ const log = async ({ companyId, userId, action, entityType, entityId, changes, i
 };
 
 const logInSession = async (session, { companyId, userId, action, entityType, entityId, changes, ipAddress }) => {
-  await AuditLog.create([{ companyId, userId, action, entityType, entityId, changes, ipAddress }], { session });
+  await AuditLog.create([{ companyId, userId, action, entityType, entityId, changes, ipAddress }], { session, ordered: true });
 };
 
 module.exports = { log, logInSession };

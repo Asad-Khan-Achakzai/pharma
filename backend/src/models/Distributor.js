@@ -11,6 +11,8 @@ const distributorSchema = new mongoose.Schema(
     phone: { type: String, trim: true },
     email: { type: String, trim: true, lowercase: true },
     discountOnTP: { type: Number, default: 0 },
+    /** % of TP×qty for distributor commission (clearing). Defaults to discountOnTP if unset. */
+    commissionPercentOnTP: { type: Number, default: null },
     isActive: { type: Boolean, default: true }
   },
   { timestamps: true }

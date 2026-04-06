@@ -18,13 +18,39 @@ const LEDGER_TYPE = {
 };
 
 const LEDGER_ENTITY_TYPE = {
-  PHARMACY: 'PHARMACY'
+  PHARMACY: 'PHARMACY',
+  /** Net clearing: positive balance (DR-CR) = distributor owes company; negative = company owes distributor. entityId = distributorId */
+  DISTRIBUTOR_CLEARING: 'DISTRIBUTOR_CLEARING'
+};
+
+const COLLECTOR_TYPE = {
+  COMPANY: 'COMPANY',
+  DISTRIBUTOR: 'DISTRIBUTOR'
+};
+
+const SETTLEMENT_DIRECTION = {
+  DISTRIBUTOR_TO_COMPANY: 'DISTRIBUTOR_TO_COMPANY',
+  COMPANY_TO_DISTRIBUTOR: 'COMPANY_TO_DISTRIBUTOR'
 };
 
 const LEDGER_REFERENCE_TYPE = {
   ORDER: 'ORDER',
   PAYMENT: 'PAYMENT',
-  RETURN: 'RETURN'
+  RETURN: 'RETURN',
+  DELIVERY: 'DELIVERY',
+  COLLECTION: 'COLLECTION',
+  SETTLEMENT: 'SETTLEMENT',
+  RETURN_CLEARING_ADJ: 'RETURN_CLEARING_ADJ'
+};
+
+/** meta.portion on COLLECTION lines in DISTRIBUTOR_CLEARING */
+const LEDGER_COLLECTION_PORTION = {
+  /** Distributor collected cash: company’s share to remit to company */
+  REMITTANCE_DUE_TO_COMPANY: 'REMITTANCE_DUE_TO_COMPANY',
+  /** Distributor collected cash: distributor’s commission on TP (portion of this collection) */
+  DISTRIBUTOR_COMMISSION_ON_COLLECTION: 'DISTRIBUTOR_COMMISSION_ON_COLLECTION',
+  /** Company collected cash: commission owed by company to distributor on this slice */
+  COMMISSION_PAYABLE_TO_DISTRIBUTOR: 'COMMISSION_PAYABLE_TO_DISTRIBUTOR'
 };
 
 const TRANSACTION_TYPE = {
@@ -65,7 +91,10 @@ module.exports = {
   ORDER_STATUS,
   LEDGER_TYPE,
   LEDGER_ENTITY_TYPE,
+  COLLECTOR_TYPE,
+  SETTLEMENT_DIRECTION,
   LEDGER_REFERENCE_TYPE,
+  LEDGER_COLLECTION_PORTION,
   TRANSACTION_TYPE,
   PAYMENT_METHOD,
   EXPENSE_CATEGORY,

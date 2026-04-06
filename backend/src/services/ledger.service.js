@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 const Ledger = require('../models/Ledger');
 const { parsePagination } = require('../utils/pagination');
 const { roundPKR } = require('../utils/currency');
+const { LEDGER_ENTITY_TYPE } = require('../constants/enums');
+const financialService = require('./financial.service');
 
 const list = async (companyId, query) => {
   const { page, limit, skip, sort } = parsePagination(query);
@@ -23,7 +25,7 @@ const list = async (companyId, query) => {
 
 const getByPharmacy = async (companyId, pharmacyId, query) => {
   const { page, limit, skip, sort } = parsePagination(query);
-  const filter = { companyId, entityId: new mongoose.Types.ObjectId(pharmacyId), entityType: 'PHARMACY' };
+  const filter = { companyId, entityId: new mongoose.Types.ObjectId(pharmacyId), entityType: LEDGER_ENTITY_TYPE.PHARMACY };
 
   const [docs, total] = await Promise.all([
     Ledger.find(filter).sort(sort).skip(skip).limit(limit),
@@ -34,7 +36,7 @@ const getByPharmacy = async (companyId, pharmacyId, query) => {
 
 const getBalance = async (companyId, pharmacyId) => {
   const result = await Ledger.aggregate([
-    { $match: { companyId: new mongoose.Types.ObjectId(companyId), entityId: new mongoose.Types.ObjectId(pharmacyId), entityType: 'PHARMACY', isDeleted: { $ne: true } } },
+    { $match: { companyId: new mongoose.Types.ObjectId(companyId), entityId: new mongoose.Types.ObjectId(pharmacyId), entityType: LEDGER_ENTITY_TYPE.PHARMACY, isDeleted: { $ne: true } } },
     {
       $group: {
         _id: null,
@@ -52,4 +54,7 @@ const getBalance = async (companyId, pharmacyId) => {
   };
 };
 
-module.exports = { list, getByPharmacy, getBalance };
+const getDistributorClearingBalance = (companyId, distributorId) =>
+  financialService.getDistributorClearingBalance(companyId, distributorId);
+
+module.exports = { list, getByPharmacy, getBalance, getDistributorClearingBalance };

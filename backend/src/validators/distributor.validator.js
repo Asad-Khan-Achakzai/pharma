@@ -7,7 +7,8 @@ const createDistributorSchema = Joi.object({
   state: Joi.string().trim().allow(''),
   phone: Joi.string().trim().allow(''),
   email: Joi.string().email().trim().allow(''),
-  discountOnTP: Joi.number().min(0).max(100).default(0)
+  discountOnTP: Joi.number().min(0).max(100).default(0),
+  commissionPercentOnTP: Joi.number().min(0).max(100).allow(null)
 });
 
 const updateDistributorSchema = Joi.object({
@@ -18,6 +19,7 @@ const updateDistributorSchema = Joi.object({
   phone: Joi.string().trim().allow(''),
   email: Joi.string().email().trim().allow(''),
   discountOnTP: Joi.number().min(0).max(100),
+  commissionPercentOnTP: Joi.number().min(0).max(100).allow(null),
   isActive: Joi.boolean()
 }).min(1);
 

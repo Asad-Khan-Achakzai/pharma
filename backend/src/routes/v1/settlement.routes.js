@@ -1,16 +1,15 @@
 const express = require('express');
 const router = express.Router();
-const c = require('../../controllers/payment.controller');
+const c = require('../../controllers/settlement.controller');
 const { authenticate } = require('../../middleware/auth');
 const { companyScope } = require('../../middleware/companyScope');
 const { checkPermission } = require('../../middleware/checkPermission');
 const { validate } = require('../../middleware/validate');
-const { createPaymentSchema } = require('../../validators/payment.validator');
+const { createSettlementSchema } = require('../../validators/settlement.validator');
 
 router.use(authenticate, companyScope);
 router.get('/', checkPermission('payments.view'), c.list);
-router.post('/', checkPermission('payments.create'), validate(createPaymentSchema), c.create);
-router.get('/pharmacy/:id', checkPermission('payments.view'), c.getByPharmacy);
+router.post('/', checkPermission('payments.create'), validate(createSettlementSchema), c.create);
 router.get('/:id', checkPermission('payments.view'), c.getById);
 
 module.exports = router;

@@ -14,9 +14,10 @@ const ApiError = require('../utils/ApiError');
 const { roundPKR } = require('../utils/currency');
 const { generateOrderNumber } = require('../utils/orderNumber');
 const { parsePagination } = require('../utils/pagination');
-const { ORDER_STATUS, LEDGER_TYPE, LEDGER_REFERENCE_TYPE, TRANSACTION_TYPE } = require('../constants/enums');
+const { ORDER_STATUS, LEDGER_TYPE, LEDGER_REFERENCE_TYPE, TRANSACTION_TYPE, LEDGER_ENTITY_TYPE } = require('../constants/enums');
 const auditService = require('./audit.service');
 const pdfService = require('./pdf.service');
+const financialService = require('./financial.service');
 
 const list = async (companyId, query) => {
   const { page, limit, skip, sort, search } = parsePagination(query);
@@ -95,7 +96,7 @@ const getById = async (companyId, id) => {
   const order = await Order.findOne({ _id: id, companyId })
     .populate('pharmacyId', 'name city address phone')
     .populate('doctorId', 'name specialization')
-    .populate('distributorId', 'name city discountOnTP')
+    .populate('distributorId', 'name city discountOnTP commissionPercentOnTP')
     .populate('medicalRepId', 'name')
     .populate('items.productId', 'name composition');
   if (!order) throw new ApiError(404, 'Order not found');
@@ -154,10 +155,17 @@ const deliver = async (companyId, orderId, deliveryItems, reqUser) => {
       throw new ApiError(400, 'Order cannot be delivered in its current status');
     }
 
+    const distributor = await Distributor.findOne({ _id: order.distributorId, companyId }).session(session);
+    if (!distributor) throw new ApiError(404, 'Distributor not found');
+
     const deliveryRecordItems = [];
     let totalAmount = 0;
     let totalCost = 0;
     let totalPacks = 0;
+    let tpSubtotal = 0;
+    let distributorShareTotal = 0;
+    let companyShareTotal = 0;
+    let commissionPctSnapshot = null;
 
     for (const dItem of deliveryItems) {
       const orderItem = order.items.find((i) => i.productId.toString() === dItem.productId);
@@ -173,10 +181,11 @@ const deliver = async (companyId, orderId, deliveryItems, reqUser) => {
         throw new ApiError(400, `Insufficient inventory for ${orderItem.productName}`);
       }
 
+      const snap = financialService.computeLineSnapshot(orderItem, dItem.quantity, distributor);
+      commissionPctSnapshot = snap.commissionPct;
+
       const avgCostAtTime = inv.avgCostPerUnit;
-      const effectiveTP = orderItem.tpAtTime;
-      const afterDistDiscount = roundPKR(effectiveTP * (1 - orderItem.distributorDiscount / 100));
-      const finalSellingPrice = roundPKR(afterDistDiscount * (1 - orderItem.clinicDiscount / 100));
+      const finalSellingPrice = snap.finalSellingPrice;
       const profitPerUnit = roundPKR(finalSellingPrice - avgCostAtTime);
       const totalProfit = roundPKR(profitPerUnit * dItem.quantity);
 
@@ -189,14 +198,31 @@ const deliver = async (companyId, orderId, deliveryItems, reqUser) => {
       orderItem.deliveredQty += dItem.quantity;
 
       deliveryRecordItems.push({
-        productId: dItem.productId, quantity: dItem.quantity,
-        avgCostAtTime, finalSellingPrice, profitPerUnit, totalProfit
+        productId: dItem.productId,
+        quantity: dItem.quantity,
+        avgCostAtTime,
+        finalSellingPrice,
+        profitPerUnit,
+        totalProfit,
+        tpLineTotal: snap.tpLineTotal,
+        distributorShare: snap.distributorShare,
+        linePharmacyNet: snap.linePharmacyNet,
+        companyShare: snap.companyShare
       });
 
-      totalAmount += roundPKR(finalSellingPrice * dItem.quantity);
+      const lineNet = snap.linePharmacyNet;
+      totalAmount += lineNet;
+      tpSubtotal += snap.tpLineTotal;
+      distributorShareTotal += snap.distributorShare;
+      companyShareTotal += snap.companyShare;
       totalCost += roundPKR(avgCostAtTime * dItem.quantity);
       totalPacks += dItem.quantity;
     }
+
+    totalAmount = roundPKR(totalAmount);
+    tpSubtotal = roundPKR(tpSubtotal);
+    distributorShareTotal = roundPKR(distributorShareTotal);
+    companyShareTotal = roundPKR(companyShareTotal);
 
     const totalProfit = roundPKR(totalAmount - totalCost);
 
@@ -207,9 +233,26 @@ const deliver = async (companyId, orderId, deliveryItems, reqUser) => {
 
     const invoiceNumber = await generateOrderNumber(DeliveryRecord, companyId, 'INV');
 
+    const pharmacyNetPayable = totalAmount;
     const [delivery] = await DeliveryRecord.create(
-      [{ companyId, orderId, invoiceNumber, items: deliveryRecordItems, totalAmount, totalCost, totalProfit, deliveredBy: reqUser.userId, createdBy: reqUser.userId }],
-      { session }
+      [
+        {
+          companyId,
+          orderId,
+          invoiceNumber,
+          items: deliveryRecordItems,
+          totalAmount,
+          totalCost,
+          totalProfit,
+          tpSubtotal,
+          distributorShareTotal,
+          pharmacyNetPayable,
+          companyShareTotal,
+          distributorCommissionPercent: commissionPctSnapshot,
+          deliveredBy: reqUser.userId
+        }
+      ],
+      { session, ordered: true }
     );
 
     if (order.doctorId) {
@@ -227,14 +270,19 @@ const deliver = async (companyId, orderId, deliveryItems, reqUser) => {
       { session }
     );
 
-    await Ledger.create(
-      [{ companyId, entityType: 'PHARMACY', entityId: order.pharmacyId, type: LEDGER_TYPE.DEBIT, amount: totalAmount, referenceType: LEDGER_REFERENCE_TYPE.ORDER, referenceId: delivery._id, description: `Delivery ${invoiceNumber}`, date: new Date(), createdBy: reqUser.userId }],
-      { session }
-    );
+    await financialService.postDeliveryLedgers(session, {
+      companyId,
+      pharmacyId: order.pharmacyId,
+      deliveryId: delivery._id,
+      orderId: order._id,
+      invoiceNumber,
+      pharmacyNetPayable,
+      date: new Date()
+    });
 
     await Transaction.create(
-      [{ companyId, type: TRANSACTION_TYPE.SALE, referenceType: 'DELIVERY', referenceId: delivery._id, revenue: totalAmount, cost: totalCost, profit: totalProfit, date: new Date(), description: `Sale - ${invoiceNumber}`, createdBy: reqUser.userId }],
-      { session }
+      [{ companyId, type: TRANSACTION_TYPE.SALE, referenceType: 'DELIVERY', referenceId: delivery._id, revenue: totalAmount, cost: totalCost, profit: totalProfit, date: new Date(), description: `Sale - ${invoiceNumber}` }],
+      { session, ordered: true }
     );
 
     await auditService.logInSession(session, { companyId, userId: reqUser.userId, action: 'order.deliver', entityType: 'Order', entityId: orderId, changes: { deliveryId: delivery._id, items: deliveryRecordItems } });
@@ -278,14 +326,15 @@ const returnOrder = async (companyId, orderId, returnItems, reqUser) => {
         throw new ApiError(400, `Cannot return ${rItem.quantity} of ${orderItem.productName}. Returnable: ${returnable}`);
       }
 
-      // Get the avgCostAtTime from the latest delivery for this product
       const lastDelivery = await DeliveryRecord.findOne(
-        { companyId, orderId, 'items.productId': rItem.productId },
-        { 'items.$': 1 }
-      ).sort({ deliveredAt: -1 }).session(session);
+        { companyId, orderId, 'items.productId': rItem.productId }
+      )
+        .sort({ deliveredAt: -1 })
+        .session(session);
 
-      const avgCostAtTime = lastDelivery?.items?.[0]?.avgCostAtTime || 0;
-      const finalSellingPrice = lastDelivery?.items?.[0]?.finalSellingPrice || 0;
+      const dLine = lastDelivery?.items?.find((i) => i.productId.toString() === rItem.productId);
+      const avgCostAtTime = dLine?.avgCostAtTime || 0;
+      const finalSellingPrice = dLine?.finalSellingPrice || 0;
       const profitPerUnit = roundPKR(finalSellingPrice - avgCostAtTime);
       const totalProfit = roundPKR(profitPerUnit * rItem.quantity);
 
@@ -297,13 +346,18 @@ const returnOrder = async (companyId, orderId, returnItems, reqUser) => {
 
       orderItem.returnedQty += rItem.quantity;
 
+      const returnLineAmount = roundPKR(finalSellingPrice * rItem.quantity);
+
       returnRecordItems.push({
-        productId: rItem.productId, quantity: rItem.quantity,
-        avgCostAtTime, finalSellingPrice, profitPerUnit, totalProfit,
+        productId: rItem.productId,
+        quantity: rItem.quantity,
+        avgCostAtTime,
+        finalSellingPrice,
+        profitPerUnit,
+        totalProfit,
         reason: rItem.reason || ''
       });
-
-      totalAmount += roundPKR(finalSellingPrice * rItem.quantity);
+      totalAmount += returnLineAmount;
       totalCost += roundPKR(avgCostAtTime * rItem.quantity);
       totalPacks += rItem.quantity;
     }
@@ -321,8 +375,8 @@ const returnOrder = async (companyId, orderId, returnItems, reqUser) => {
     await order.save({ session });
 
     const [returnRecord] = await ReturnRecord.create(
-      [{ companyId, orderId, items: returnRecordItems, totalAmount, totalCost, totalProfit, returnedBy: reqUser.userId, createdBy: reqUser.userId }],
-      { session }
+      [{ companyId, orderId, items: returnRecordItems, totalAmount, totalCost, totalProfit, returnedBy: reqUser.userId }],
+      { session, ordered: true }
     );
 
     if (order.doctorId) {
@@ -340,14 +394,45 @@ const returnOrder = async (companyId, orderId, returnItems, reqUser) => {
       { session }
     );
 
+    const retDate = new Date();
     await Ledger.create(
-      [{ companyId, entityType: 'PHARMACY', entityId: order.pharmacyId, type: LEDGER_TYPE.CREDIT, amount: totalAmount, referenceType: LEDGER_REFERENCE_TYPE.RETURN, referenceId: returnRecord._id, description: `Return for order ${order.orderNumber}`, date: new Date(), createdBy: reqUser.userId }],
-      { session }
+      [{ companyId, entityType: LEDGER_ENTITY_TYPE.PHARMACY, entityId: order.pharmacyId, type: LEDGER_TYPE.CREDIT, amount: totalAmount, referenceType: LEDGER_REFERENCE_TYPE.RETURN, referenceId: returnRecord._id, description: `Return for order ${order.orderNumber}`, date: retDate }],
+      { session, ordered: true }
     );
 
+    for (const row of returnRecordItems) {
+      const returnLineAmount = roundPKR(row.finalSellingPrice * row.quantity);
+      const lastDelivery = await DeliveryRecord.findOne({
+        companyId,
+        orderId,
+        'items.productId': row.productId
+      })
+        .sort({ deliveredAt: -1 })
+        .session(session);
+      if (!lastDelivery) continue;
+      const line = lastDelivery.items.find((i) => i.productId.toString() === row.productId.toString());
+      if (!line) continue;
+      const linePharmacyNet = roundPKR(line.linePharmacyNet ?? line.finalSellingPrice * line.quantity);
+      if (linePharmacyNet <= 0) continue;
+      const f = Math.min(1, returnLineAmount / linePharmacyNet);
+      const lineCompany = line.companyShare != null ? roundPKR(line.companyShare) : roundPKR(linePharmacyNet - (line.distributorShare || 0));
+      const lineDist = line.distributorShare != null ? roundPKR(line.distributorShare) : 0;
+      await financialService.postReturnClearingAdjustment(session, {
+        companyId,
+        distributorId: order.distributorId,
+        deliveryId: lastDelivery._id,
+        orderId: order._id,
+        fraction: f,
+        companyShareTotal: lineCompany,
+        distributorShareTotal: lineDist,
+        returnRecordId: returnRecord._id,
+        date: retDate
+      });
+    }
+
     await Transaction.create(
-      [{ companyId, type: TRANSACTION_TYPE.RETURN, referenceType: 'RETURN', referenceId: returnRecord._id, revenue: -totalAmount, cost: -totalCost, profit: -totalProfit, date: new Date(), description: `Return - ${order.orderNumber}`, createdBy: reqUser.userId }],
-      { session }
+      [{ companyId, type: TRANSACTION_TYPE.RETURN, referenceType: 'RETURN', referenceId: returnRecord._id, revenue: -totalAmount, cost: -totalCost, profit: -totalProfit, date: new Date(), description: `Return - ${order.orderNumber}` }],
+      { session, ordered: true }
     );
 
     await auditService.logInSession(session, { companyId, userId: reqUser.userId, action: 'order.return', entityType: 'Order', entityId: orderId, changes: { returnId: returnRecord._id, items: returnRecordItems } });

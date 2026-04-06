@@ -9,5 +9,21 @@ export const reportsService = {
   doctorROI: () => api.get('/reports/doctor-roi'),
   repPerformance: () => api.get('/reports/rep-performance'),
   outstanding: () => api.get('/reports/outstanding'),
-  cashFlow: (params?: any) => api.get('/reports/cash-flow', { params })
+  cashFlow: (params?: any) => api.get('/reports/cash-flow', { params }),
+
+  /** Full snapshot: balances + optional period (pass from/to for collections, settlements, cash summary). */
+  financialOverview: (params?: Record<string, string | undefined>) =>
+    api.get('/reports/financial/overview', { params }),
+  pharmacyBalances: (params?: { pharmacyId?: string }) =>
+    api.get('/reports/financial/pharmacy-balances', { params }),
+  pharmacyBalanceDetail: (id: string) => api.get(`/reports/financial/pharmacies/${id}/detail`),
+  distributorBalances: (params?: { distributorId?: string }) =>
+    api.get('/reports/financial/distributor-balances', { params }),
+  distributorBalanceDetail: (id: string) => api.get(`/reports/financial/distributors/${id}/detail`),
+  collectionsPeriod: (params?: Record<string, string | undefined>) =>
+    api.get('/reports/financial/collections', { params }),
+  settlementsPeriod: (params?: Record<string, string | undefined>) =>
+    api.get('/reports/financial/settlements', { params }),
+  financialCashSummary: (params?: { from?: string; to?: string }) =>
+    api.get('/reports/financial/cash-summary', { params })
 }

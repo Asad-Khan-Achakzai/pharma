@@ -60,8 +60,10 @@ const verticalMenuData = (): MenuItemWithPermission[] => [
     icon: 'tabler-cash',
     permission: 'payments.view',
     children: [
-      { label: 'All Payments', href: '/payments/list' },
-      { label: 'Record Payment', href: '/payments/add', permission: 'payments.create' }
+      { label: 'Collections', href: '/payments/list' },
+      { label: 'Record collection', href: '/payments/add', permission: 'payments.create' },
+      { label: 'Settlements', href: '/settlements/list' },
+      { label: 'Record settlement', href: '/settlements/add', permission: 'payments.create' }
     ]
   },
   {

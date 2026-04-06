@@ -17,4 +17,9 @@ const getBalance = asyncHandler(async (req, res) => {
   ApiResponse.success(res, balance);
 });
 
-module.exports = { list, getByPharmacy, getBalance };
+const getDistributorClearingBalance = asyncHandler(async (req, res) => {
+  const balance = await ledgerService.getDistributorClearingBalance(req.companyId, req.params.id);
+  ApiResponse.success(res, balance);
+});
+
+module.exports = { list, getByPharmacy, getBalance, getDistributorClearingBalance };

@@ -28,47 +28,49 @@ import type { ColumnDef, FilterFn } from '@tanstack/react-table'
 import { rankItem } from '@tanstack/match-sorter-utils'
 import CustomTextField from '@core/components/mui/TextField'
 import TablePaginationComponent from '@components/TablePaginationComponent'
-import { collectionsService } from '@/services/collections.service'
+import { settlementsService } from '@/services/settlements.service'
 import tableStyles from '@core/styles/table.module.css'
 
-type CollectionRow = {
+type SettlementRow = {
   _id: string
-  pharmacyId: any
-  collectorType: string
+  distributorId: any
+  direction: string
   amount: number
   paymentMethod: string
-  collectedBy: any
+  settledBy: any
   date: string
   notes?: string
   referenceNumber?: string
+  isNetSettlement?: boolean
 }
+
 const fuzzyFilter: FilterFn<any> = (row, columnId, value, addMeta) => {
   const r = rankItem(row.getValue(columnId), value)
   addMeta({ itemRank: r })
   return r.passed
 }
-const columnHelper = createColumnHelper<CollectionRow>()
+const columnHelper = createColumnHelper<SettlementRow>()
 
-const collectorLabel = (t: string) =>
-  t === 'COMPANY' ? 'Company' : t === 'DISTRIBUTOR' ? 'Distributor' : t
+const directionLabel = (d: string) =>
+  d === 'DISTRIBUTOR_TO_COMPANY' ? 'Distributor → company' : d === 'COMPANY_TO_DISTRIBUTOR' ? 'Company → distributor' : d
 
-const PaymentListPage = () => {
+const SettlementListPage = () => {
   const router = useRouter()
   const { hasPermission } = useAuth()
   const canCreate = hasPermission('payments.create')
-  const [data, setData] = useState<CollectionRow[]>([])
+  const [data, setData] = useState<SettlementRow[]>([])
   const [globalFilter, setGlobalFilter] = useState('')
   const [loading, setLoading] = useState(true)
-  const [viewItem, setViewItem] = useState<CollectionRow | null>(null)
+  const [viewItem, setViewItem] = useState<SettlementRow | null>(null)
 
   useEffect(() => {
     const f = async () => {
       setLoading(true)
       try {
-        const { data: r } = await collectionsService.list({ limit: 200 })
+        const { data: r } = await settlementsService.list({ limit: 200 })
         setData(r.data || [])
       } catch (err) {
-        showApiError(err, 'Failed to load collections')
+        showApiError(err, 'Failed to load settlements')
       } finally {
         setLoading(false)
       }
@@ -76,19 +78,19 @@ const PaymentListPage = () => {
     f()
   }, [])
 
-  const columns = useMemo<ColumnDef<CollectionRow, any>[]>(
+  const columns = useMemo<ColumnDef<SettlementRow, any>[]>(
     () => [
       columnHelper.display({
-        id: 'pharmacy',
-        header: 'Pharmacy',
+        id: 'distributor',
+        header: 'Distributor',
         cell: ({ row }) => (
-          <Typography fontWeight={500}>{row.original.pharmacyId?.name || '-'}</Typography>
+          <Typography fontWeight={500}>{row.original.distributorId?.name || '-'}</Typography>
         )
       }),
-      columnHelper.accessor('collectorType', {
-        header: 'Collector',
+      columnHelper.accessor('direction', {
+        header: 'Direction',
         cell: ({ row }) => (
-          <Chip size='small' label={collectorLabel(row.original.collectorType)} variant='outlined' color='primary' />
+          <Chip size='small' label={directionLabel(row.original.direction)} color='secondary' variant='outlined' />
         )
       }),
       columnHelper.accessor('amount', {
@@ -129,7 +131,7 @@ const PaymentListPage = () => {
 
   return (
     <Card>
-      <CardHeader title='Collections' subheader='Pharmacy receipts (company or distributor collector)' />
+      <CardHeader title='Settlements' subheader='Distributor clearing (FIFO on server)' />
       <div className='flex flex-wrap items-center justify-between gap-4 pli-6 pbe-4'>
         <CustomTextField
           value={globalFilter ?? ''}
@@ -140,9 +142,9 @@ const PaymentListPage = () => {
           <Button
             variant='contained'
             startIcon={<i className='tabler-plus' />}
-            onClick={() => router.push('/payments/add')}
+            onClick={() => router.push('/settlements/add')}
           >
-            Record collection
+            Record settlement
           </Button>
         )}
       </div>
@@ -167,7 +169,7 @@ const PaymentListPage = () => {
             ) : table.getRowModel().rows.length === 0 ? (
               <tr>
                 <td colSpan={columns.length} className='text-center p-6'>
-                  No collections
+                  No settlements
                 </td>
               </tr>
             ) : (
@@ -185,21 +187,21 @@ const PaymentListPage = () => {
       <TablePaginationComponent table={table as any} />
 
       <Dialog open={!!viewItem} onClose={() => setViewItem(null)} maxWidth='sm' fullWidth>
-        <DialogTitle>Collection details</DialogTitle>
+        <DialogTitle>Settlement details</DialogTitle>
         <DialogContent>
           {viewItem && (
             <Grid container spacing={3} className='pbs-4'>
-              <Grid size={{ xs: 6 }}>
+              <Grid size={{ xs: 12 }}>
                 <Typography variant='body2' color='text.secondary'>
-                  Pharmacy
+                  Distributor
                 </Typography>
-                <Typography fontWeight={500}>{viewItem.pharmacyId?.name || '-'}</Typography>
+                <Typography fontWeight={500}>{viewItem.distributorId?.name || '-'}</Typography>
               </Grid>
-              <Grid size={{ xs: 6 }}>
+              <Grid size={{ xs: 12 }}>
                 <Typography variant='body2' color='text.secondary'>
-                  Collector
+                  Direction
                 </Typography>
-                <Typography>{collectorLabel(viewItem.collectorType)}</Typography>
+                <Typography>{directionLabel(viewItem.direction)}</Typography>
               </Grid>
               <Grid size={{ xs: 6 }}>
                 <Typography variant='body2' color='text.secondary'>
@@ -215,9 +217,9 @@ const PaymentListPage = () => {
               </Grid>
               <Grid size={{ xs: 6 }}>
                 <Typography variant='body2' color='text.secondary'>
-                  Collected by
+                  Settled by
                 </Typography>
-                <Typography>{viewItem.collectedBy?.name || '-'}</Typography>
+                <Typography>{viewItem.settledBy?.name || '-'}</Typography>
               </Grid>
               <Grid size={{ xs: 6 }}>
                 <Typography variant='body2' color='text.secondary'>
@@ -251,4 +253,4 @@ const PaymentListPage = () => {
     </Card>
   )
 }
-export default PaymentListPage
+export default SettlementListPage

@@ -16,4 +16,14 @@ router.get('/rep-performance', checkPermission('reports.view'), c.repPerformance
 router.get('/outstanding', checkPermission('reports.view'), c.outstanding);
 router.get('/cash-flow', checkPermission('reports.view'), c.cashFlow);
 
+/** Financial position & period activity (collections, settlements, clearing). */
+router.get('/financial/overview', checkPermission('reports.view'), c.financialOverview);
+router.get('/financial/pharmacy-balances', checkPermission('reports.view'), c.pharmacyBalances);
+router.get('/financial/pharmacies/:id/detail', checkPermission('reports.view'), c.pharmacyBalanceDetail);
+router.get('/financial/distributor-balances', checkPermission('reports.view'), c.distributorBalances);
+router.get('/financial/distributors/:id/detail', checkPermission('reports.view'), c.distributorBalanceDetail);
+router.get('/financial/collections', checkPermission('reports.view'), c.collectionsPeriod);
+router.get('/financial/settlements', checkPermission('reports.view'), c.settlementsPeriod);
+router.get('/financial/cash-summary', checkPermission('reports.view'), c.financialCashSummary);
+
 module.exports = router;

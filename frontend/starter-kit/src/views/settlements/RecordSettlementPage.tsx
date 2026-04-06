@@ -15,18 +15,15 @@ import FormControlLabel from '@mui/material/FormControlLabel'
 import Radio from '@mui/material/Radio'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import CustomTextField from '@core/components/mui/TextField'
-import { collectionsService } from '@/services/collections.service'
-import { pharmaciesService } from '@/services/pharmacies.service'
+import { settlementsService } from '@/services/settlements.service'
 import { distributorsService } from '@/services/distributors.service'
 
-const RecordPaymentPage = () => {
+const RecordSettlementPage = () => {
   const router = useRouter()
-  const [pharmacies, setPharmacies] = useState<any[]>([])
   const [distributors, setDistributors] = useState<any[]>([])
   const [form, setForm] = useState({
-    pharmacyId: '',
     distributorId: '',
-    collectorType: 'COMPANY' as 'COMPANY' | 'DISTRIBUTOR',
+    direction: 'DISTRIBUTOR_TO_COMPANY' as 'DISTRIBUTOR_TO_COMPANY' | 'COMPANY_TO_DISTRIBUTOR',
     amount: 0,
     paymentMethod: 'CASH',
     referenceNumber: '',
@@ -35,25 +32,16 @@ const RecordPaymentPage = () => {
   const [saving, setSaving] = useState(false)
   const [loadingData, setLoadingData] = useState(true)
 
-  const needsDistributor = form.collectorType === 'DISTRIBUTOR'
-  const isFormValid =
-    form.pharmacyId !== '' &&
-    form.amount > 0 &&
-    form.paymentMethod !== '' &&
-    (!needsDistributor || form.distributorId !== '')
+  const isFormValid = form.distributorId !== '' && form.amount > 0 && form.paymentMethod !== ''
 
   useEffect(() => {
     const f = async () => {
       setLoadingData(true)
       try {
-        const [pr, dr] = await Promise.all([
-          pharmaciesService.list({ limit: 100 }),
-          distributorsService.list({ limit: 200, isActive: 'true' })
-        ])
-        setPharmacies(pr.data.data || [])
-        setDistributors(dr.data.data || [])
+        const { data: r } = await distributorsService.list({ limit: 200, isActive: 'true' })
+        setDistributors(r.data || [])
       } catch (err) {
-        showApiError(err, 'Failed to load pharmacies')
+        showApiError(err, 'Failed to load distributors')
       } finally {
         setLoadingData(false)
       }
@@ -62,25 +50,24 @@ const RecordPaymentPage = () => {
   }, [])
 
   const handleSubmit = async () => {
-    if (!form.pharmacyId || form.amount <= 0) {
+    if (!form.distributorId || form.amount <= 0) {
       showApiError(null, 'Fill required fields')
       return
     }
     setSaving(true)
     try {
-      await collectionsService.create({
-        pharmacyId: form.pharmacyId,
-        collectorType: form.collectorType,
-        ...(form.collectorType === 'DISTRIBUTOR' ? { distributorId: form.distributorId } : {}),
+      await settlementsService.create({
+        distributorId: form.distributorId,
+        direction: form.direction,
         amount: form.amount,
         paymentMethod: form.paymentMethod,
         referenceNumber: form.referenceNumber || undefined,
         notes: form.notes || undefined
       })
-      showSuccess('Collection recorded')
-      router.push('/payments/list')
+      showSuccess('Settlement recorded')
+      router.push('/settlements/list')
     } catch (err) {
-      showApiError(err, 'Failed to record collection')
+      showApiError(err, 'Failed to record settlement')
     } finally {
       setSaving(false)
     }
@@ -89,8 +76,8 @@ const RecordPaymentPage = () => {
   return (
     <Card>
       <CardHeader
-        title='Record collection'
-        subheader='Money received from pharmacy. Company collector: FIFO across all distributors for this pharmacy. Distributor collector: choose which distributor collected — allocation runs only against that distributor’s deliveries.'
+        title='Record settlement'
+        subheader='Clears distributor clearing balance FIFO (per distributor, not netted across distributors)'
       />
       <CardContent>
         {loadingData ? (
@@ -101,20 +88,26 @@ const RecordPaymentPage = () => {
           <Grid container spacing={4}>
             <Grid size={{ xs: 12 }}>
               <FormControl>
-                <FormLabel>Collected by</FormLabel>
+                <FormLabel>Direction</FormLabel>
                 <RadioGroup
-                  row
-                  value={form.collectorType}
+                  value={form.direction}
                   onChange={e =>
                     setForm(p => ({
                       ...p,
-                      collectorType: e.target.value as 'COMPANY' | 'DISTRIBUTOR',
-                      distributorId: e.target.value === 'COMPANY' ? '' : p.distributorId
+                      direction: e.target.value as 'DISTRIBUTOR_TO_COMPANY' | 'COMPANY_TO_DISTRIBUTOR'
                     }))
                   }
                 >
-                  <FormControlLabel value='COMPANY' control={<Radio />} label='Company' />
-                  <FormControlLabel value='DISTRIBUTOR' control={<Radio />} label='Distributor' />
+                  <FormControlLabel
+                    value='DISTRIBUTOR_TO_COMPANY'
+                    control={<Radio />}
+                    label='Distributor pays company'
+                  />
+                  <FormControlLabel
+                    value='COMPANY_TO_DISTRIBUTOR'
+                    control={<Radio />}
+                    label='Company pays distributor'
+                  />
                 </RadioGroup>
               </FormControl>
             </Grid>
@@ -123,39 +116,17 @@ const RecordPaymentPage = () => {
                 required
                 select
                 fullWidth
-                label='Pharmacy'
-                value={form.pharmacyId}
-                onChange={e => setForm(p => ({ ...p, pharmacyId: e.target.value }))}
+                label='Distributor'
+                value={form.distributorId}
+                onChange={e => setForm(p => ({ ...p, distributorId: e.target.value }))}
               >
-                {pharmacies.map(p => (
-                  <MenuItem key={p._id} value={p._id}>
-                    {p.name}
+                {distributors.map(d => (
+                  <MenuItem key={d._id} value={d._id}>
+                    {d.name}
                   </MenuItem>
                 ))}
               </CustomTextField>
             </Grid>
-            {needsDistributor && (
-              <Grid size={{ xs: 12, sm: 6 }}>
-                <CustomTextField
-                  required
-                  select
-                  fullWidth
-                  label='Distributor who collected'
-                  value={form.distributorId}
-                  onChange={e => setForm(p => ({ ...p, distributorId: e.target.value }))}
-                  helperText='Money is applied FIFO only to this distributor’s receivable from the pharmacy'
-                >
-                  <MenuItem value='' disabled>
-                    Select distributor
-                  </MenuItem>
-                  {distributors.map(d => (
-                    <MenuItem key={d._id} value={d._id}>
-                      {d.name}
-                    </MenuItem>
-                  ))}
-                </CustomTextField>
-              </Grid>
-            )}
             <Grid size={{ xs: 12, sm: 6 }}>
               <CustomTextField
                 required
@@ -206,7 +177,7 @@ const RecordPaymentPage = () => {
                 disabled={saving || !isFormValid}
                 startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}
               >
-                {saving ? 'Saving...' : 'Record collection'}
+                {saving ? 'Saving...' : 'Record settlement'}
               </Button>
             </Grid>
           </Grid>
@@ -215,4 +186,4 @@ const RecordPaymentPage = () => {
     </Card>
   )
 }
-export default RecordPaymentPage
+export default RecordSettlementPage

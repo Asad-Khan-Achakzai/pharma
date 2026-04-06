@@ -7,7 +7,13 @@ const MedRepTarget = require('../models/MedRepTarget');
 const Order = require('../models/Order');
 const Expense = require('../models/Expense');
 const Payment = require('../models/Payment');
+const Collection = require('../models/Collection');
+const Settlement = require('../models/Settlement');
+const Pharmacy = require('../models/Pharmacy');
+const Distributor = require('../models/Distributor');
 const { roundPKR } = require('../utils/currency');
+const { LEDGER_ENTITY_TYPE, SETTLEMENT_DIRECTION } = require('../constants/enums');
+const financialService = require('./financial.service');
 
 const objectId = (id) => new mongoose.Types.ObjectId(id);
 
@@ -28,12 +34,12 @@ const dashboard = async (companyId) => {
       { $match: { companyId: cid, isDeleted: nd } },
       { $group: { _id: '$status', count: { $sum: 1 } } }
     ]),
-    Payment.aggregate([
+    Collection.aggregate([
       { $match: { companyId: cid, isDeleted: nd } },
       { $group: { _id: null, totalPaid: { $sum: '$amount' } } }
     ]),
     Ledger.aggregate([
-      { $match: { companyId: cid, entityType: 'PHARMACY', isDeleted: nd } },
+      { $match: { companyId: cid, entityType: LEDGER_ENTITY_TYPE.PHARMACY, isDeleted: nd } },
       {
         $group: {
           _id: null,
@@ -188,7 +194,7 @@ const repPerformance = async (companyId) => {
 
 const outstanding = async (companyId) => {
   return Ledger.aggregate([
-    { $match: { companyId: objectId(companyId), entityType: 'PHARMACY', isDeleted: nd } },
+    { $match: { companyId: objectId(companyId), entityType: LEDGER_ENTITY_TYPE.PHARMACY, isDeleted: nd } },
     {
       $group: {
         _id: '$entityId',
@@ -207,28 +213,499 @@ const outstanding = async (companyId) => {
   ]);
 };
 
+const endOfDay = (d) => {
+  if (!d) return null;
+  const x = new Date(d);
+  x.setHours(23, 59, 59, 999);
+  return x;
+};
+
 const cashFlow = async (companyId, from, to) => {
-  const match = { companyId: objectId(companyId), isDeleted: nd };
+  const cid = objectId(companyId);
+  const dateRange = {};
+  if (from) dateRange.$gte = new Date(from);
+  if (to) dateRange.$lte = endOfDay(to);
+
+  const collectionMatch = { companyId: cid, isDeleted: nd };
+  const paymentLegacyMatch = { companyId: cid, isDeleted: nd };
+  const expenseMatch = { companyId: cid, isDeleted: nd };
+  const settlementMatch = { companyId: cid, isDeleted: nd };
   if (from || to) {
-    match.date = {};
-    if (from) match.date.$gte = new Date(from);
-    if (to) match.date.$lte = new Date(to);
+    const dr = {};
+    if (from) dr.$gte = new Date(from);
+    if (to) dr.$lte = endOfDay(to);
+    collectionMatch.date = dr;
+    paymentLegacyMatch.date = { ...dr };
+    expenseMatch.date = { ...dr };
+    settlementMatch.date = { ...dr };
   }
 
-  const [inflow, outflow] = await Promise.all([
+  const [collectionsIn, paymentsLegacyIn, expensesOut, settlementsD2C, settlementsC2D] = await Promise.all([
+    Collection.aggregate([
+      { $match: collectionMatch },
+      { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } }, amount: { $sum: '$amount' } } },
+      { $sort: { _id: 1 } }
+    ]),
     Payment.aggregate([
-      { $match: match },
+      { $match: paymentLegacyMatch },
       { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } }, amount: { $sum: '$amount' } } },
       { $sort: { _id: 1 } }
     ]),
     Expense.aggregate([
-      { $match: match },
+      { $match: expenseMatch },
+      { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } }, amount: { $sum: '$amount' } } },
+      { $sort: { _id: 1 } }
+    ]),
+    Settlement.aggregate([
+      { $match: { ...settlementMatch, direction: SETTLEMENT_DIRECTION.DISTRIBUTOR_TO_COMPANY } },
+      { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } }, amount: { $sum: '$amount' } } },
+      { $sort: { _id: 1 } }
+    ]),
+    Settlement.aggregate([
+      { $match: { ...settlementMatch, direction: SETTLEMENT_DIRECTION.COMPANY_TO_DISTRIBUTOR } },
       { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } }, amount: { $sum: '$amount' } } },
       { $sort: { _id: 1 } }
     ])
   ]);
 
-  return { inflow, outflow };
+  return {
+    collectionsFromPharmacies: collectionsIn,
+    legacyPayments: paymentsLegacyIn,
+    settlementsDistributorToCompany: settlementsD2C,
+    settlementsCompanyToDistributor: settlementsC2D,
+    expenses: expensesOut
+  };
 };
 
-module.exports = { dashboard, sales, profit, expenses, inventoryValuation, doctorROI, repPerformance, outstanding, cashFlow };
+/** All pharmacies: invoice receivable balance (DR−CR on pharmacy ledger). */
+const pharmacyBalances = async (companyId, query = {}) => {
+  const cid = objectId(companyId);
+  const ledgerAgg = await Ledger.aggregate([
+    { $match: { companyId: cid, entityType: LEDGER_ENTITY_TYPE.PHARMACY, isDeleted: nd } },
+    {
+      $group: {
+        _id: '$entityId',
+        totalDebit: { $sum: { $cond: [{ $eq: ['$type', 'DEBIT'] }, '$amount', 0] } },
+        totalCredit: { $sum: { $cond: [{ $eq: ['$type', 'CREDIT'] }, '$amount', 0] } }
+      }
+    },
+    { $addFields: { outstanding: { $subtract: ['$totalDebit', '$totalCredit'] } } }
+  ]);
+  const ledgerMap = new Map(ledgerAgg.map((x) => [x._id.toString(), x]));
+
+  const pharmFilter = { companyId: cid, isDeleted: nd };
+  if (query.pharmacyId) pharmFilter._id = objectId(query.pharmacyId);
+
+  const pharmacies = await Pharmacy.find(pharmFilter).select('name city phone isActive').lean();
+  const rows = pharmacies.map((p) => {
+    const L = ledgerMap.get(p._id.toString()) || { totalDebit: 0, totalCredit: 0, outstanding: 0 };
+    const o = roundPKR(L.outstanding);
+    return {
+      pharmacyId: p._id,
+      name: p.name,
+      city: p.city,
+      phone: p.phone,
+      isActive: p.isActive,
+      totalDebit: roundPKR(L.totalDebit),
+      totalCredit: roundPKR(L.totalCredit),
+      outstanding: o,
+      receivableFromPharmacy: roundPKR(Math.max(0, o)),
+      advanceOrCreditFromPharmacy: roundPKR(Math.max(0, -o))
+    };
+  });
+
+  rows.sort((a, b) => b.receivableFromPharmacy - a.receivableFromPharmacy);
+
+  const totals = {
+    totalOutstandingNet: roundPKR(rows.reduce((s, r) => s + r.outstanding, 0)),
+    totalReceivable: roundPKR(rows.reduce((s, r) => s + r.receivableFromPharmacy, 0)),
+    totalPharmacyCreditBalance: roundPKR(rows.reduce((s, r) => s + r.advanceOrCreditFromPharmacy, 0))
+  };
+
+  return { rows, totals, help: 'Positive receivableFromPharmacy = pharmacy still owes on invoices. Negative outstanding = pharmacy has prepaid / credit.' };
+};
+
+/** Ledger breakdown for one pharmacy (by reference type). */
+const pharmacyBalanceDetail = async (companyId, pharmacyId) => {
+  const cid = objectId(companyId);
+  const pid = objectId(pharmacyId);
+  const p = await Pharmacy.findOne({ _id: pid, companyId: cid }).lean();
+  if (!p) return null;
+
+  const byRef = await Ledger.aggregate([
+    { $match: { companyId: cid, entityType: LEDGER_ENTITY_TYPE.PHARMACY, entityId: pid, isDeleted: nd } },
+    {
+      $group: {
+        _id: '$referenceType',
+        debit: { $sum: { $cond: [{ $eq: ['$type', 'DEBIT'] }, '$amount', 0] } },
+        credit: { $sum: { $cond: [{ $eq: ['$type', 'CREDIT'] }, '$amount', 0] } }
+      }
+    },
+    { $sort: { _id: 1 } }
+  ]);
+
+  const net = roundPKR(
+    byRef.reduce((s, r) => s + roundPKR(r.debit) - roundPKR(r.credit), 0)
+  );
+
+  return {
+    pharmacy: { _id: p._id, name: p.name, city: p.city, phone: p.phone },
+    netOutstanding: net,
+    byReferenceType: byRef.map((r) => ({
+      referenceType: r._id,
+      debit: roundPKR(r.debit),
+      credit: roundPKR(r.credit),
+      net: roundPKR(r.debit - r.credit)
+    }))
+  };
+};
+
+/** All distributors: clearing net (DR−CR). Positive = distributor owes company net. */
+const distributorBalances = async (companyId, query = {}) => {
+  const cid = objectId(companyId);
+  const ledgerAgg = await Ledger.aggregate([
+    { $match: { companyId: cid, entityType: LEDGER_ENTITY_TYPE.DISTRIBUTOR_CLEARING, isDeleted: nd } },
+    {
+      $group: {
+        _id: '$entityId',
+        totalDebit: { $sum: { $cond: [{ $eq: ['$type', 'DEBIT'] }, '$amount', 0] } },
+        totalCredit: { $sum: { $cond: [{ $eq: ['$type', 'CREDIT'] }, '$amount', 0] } }
+      }
+    },
+    { $addFields: { net: { $subtract: ['$totalDebit', '$totalCredit'] } } }
+  ]);
+  const ledgerMap = new Map(ledgerAgg.map((x) => [x._id.toString(), x]));
+
+  const distFilter = { companyId: cid, isDeleted: nd };
+  if (query.distributorId) distFilter._id = objectId(query.distributorId);
+
+  const distributors = await Distributor.find(distFilter).select('name city phone isActive').lean();
+  const rows = await Promise.all(
+    distributors.map(async (d) => {
+      const L = ledgerMap.get(d._id.toString()) || { totalDebit: 0, totalCredit: 0, net: 0 };
+      const n = roundPKR(L.net);
+      const ob = await financialService.getDistributorObligations(companyId, d._id);
+      return {
+        distributorId: d._id,
+        name: d.name,
+        city: d.city,
+        phone: d.phone,
+        isActive: d.isActive,
+        totalDebit: roundPKR(L.totalDebit),
+        totalCredit: roundPKR(L.totalCredit),
+        /** Raw ledger net (DR−CR) on distributor clearing — for audit; use obligations for business meaning */
+        netDistributorOwesCompany: n,
+        companyOwesDistributorNet: roundPKR(Math.max(0, -n)),
+        /** Cash collected by distributor not yet remitted to company (open remittance lines − settlements) */
+        remittanceDueFromDistributor: ob.remittanceDueFromDistributor,
+        /** Commission on TP owed by company to distributor when company collected from pharmacy (open − settlements) */
+        commissionPayableByCompanyToDistributor: ob.commissionPayableByCompanyToDistributor
+      };
+    })
+  );
+
+  rows.sort((a, b) => b.remittanceDueFromDistributor - a.remittanceDueFromDistributor);
+
+  const totals = {
+    sumNetOwedByDistributorsToCompany: roundPKR(rows.reduce((s, r) => s + Math.max(0, r.netDistributorOwesCompany), 0)),
+    sumNetOwedByCompanyToDistributors: roundPKR(rows.reduce((s, r) => s + r.companyOwesDistributorNet, 0)),
+    sumRemittanceDueFromDistributors: roundPKR(rows.reduce((s, r) => s + r.remittanceDueFromDistributor, 0)),
+    sumCommissionPayableByCompanyToDistributors: roundPKR(rows.reduce((s, r) => s + r.commissionPayableByCompanyToDistributor, 0))
+  };
+
+  return {
+    rows,
+    totals,
+    help:
+      'Delivery only creates pharmacy receivables (invoice to pharmacy). Distributor commission on TP and company share are snapshotted on the delivery record. Clearing lines for distributor vs company appear when cash is collected: if the distributor collected from the pharmacy, a remittance-due line shows what they still owe the company; if the company collected, a commission-payable line shows what the company owes the distributor on that cash. Use remittance due / commission payable columns for real-world obligations; raw net (DR−CR) is the full clearing account for audit.',
+    helpShort:
+      'Remittance due = cash the distributor must still pay the company from collections. Commission payable = TP commission the company owes the distributor when company collected. Pharmacy column = invoice balances.'
+  };
+};
+
+const distributorBalanceDetail = async (companyId, distributorId) => {
+  const cid = objectId(companyId);
+  const did = objectId(distributorId);
+  const d = await Distributor.findOne({ _id: did, companyId: cid }).lean();
+  if (!d) return null;
+
+  const byRef = await Ledger.aggregate([
+    { $match: { companyId: cid, entityType: LEDGER_ENTITY_TYPE.DISTRIBUTOR_CLEARING, entityId: did, isDeleted: nd } },
+    {
+      $group: {
+        _id: '$referenceType',
+        debit: { $sum: { $cond: [{ $eq: ['$type', 'DEBIT'] }, '$amount', 0] } },
+        credit: { $sum: { $cond: [{ $eq: ['$type', 'CREDIT'] }, '$amount', 0] } }
+      }
+    },
+    { $sort: { _id: 1 } }
+  ]);
+
+  const net = roundPKR(byRef.reduce((s, r) => s + roundPKR(r.debit) - roundPKR(r.credit), 0));
+
+  const deliveryAgg = byRef.find((r) => r._id === 'DELIVERY');
+  const deliveryCompanyShareDebit = deliveryAgg ? roundPKR(deliveryAgg.debit) : 0;
+  const deliveryCommissionCredit = deliveryAgg ? roundPKR(deliveryAgg.credit) : 0;
+
+  const obligations = await financialService.getDistributorObligations(companyId, distributorId);
+
+  return {
+    distributor: { _id: d._id, name: d.name, city: d.city, phone: d.phone },
+    netDistributorOwesCompany: net,
+    obligations,
+    byReferenceType: byRef.map((r) => ({
+      referenceType: r._id,
+      debit: roundPKR(r.debit),
+      credit: roundPKR(r.credit),
+      net: roundPKR(r.debit - r.credit)
+    })),
+    deliverySplit:
+      deliveryAgg != null && (deliveryCompanyShareDebit > 0 || deliveryCommissionCredit > 0)
+        ? {
+            companyShareOnDeliveries: deliveryCompanyShareDebit,
+            distributorCommissionOnTp: deliveryCommissionCredit,
+            netDeliveryClearing: roundPKR(deliveryCompanyShareDebit - deliveryCommissionCredit),
+            note: 'Legacy delivery postings on clearing (older data). New deliveries only hit pharmacy receivables; splits are on the delivery document until cash is collected.'
+          }
+        : null,
+    clearingHelp:
+      'Remittance due from distributor = cash they collected for you and still owe back (see obligations). Commission payable by company = when your team collected from the pharmacy, TP commission still owed to the distributor. Raw net = full clearing DR−CR for audit. Delivery no longer posts to distributor clearing by default — only collections and settlements do.'
+  };
+};
+
+const collectionsPeriod = async (companyId, from, to, filters = {}) => {
+  const cid = objectId(companyId);
+  const match = { companyId: cid, isDeleted: nd };
+  if (from || to) {
+    match.date = {};
+    if (from) match.date.$gte = new Date(from);
+    if (to) match.date.$lte = endOfDay(to);
+  }
+  if (filters.pharmacyId) match.pharmacyId = objectId(filters.pharmacyId);
+  if (filters.collectorType) match.collectorType = filters.collectorType;
+
+  const [grand, byCollector, byPharmacy, byDay, rows] = await Promise.all([
+    Collection.aggregate([
+      { $match: match },
+      { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }
+    ]),
+    Collection.aggregate([
+      { $match: match },
+      { $group: { _id: '$collectorType', total: { $sum: '$amount' }, count: { $sum: 1 } } }
+    ]),
+    Collection.aggregate([
+      { $match: match },
+      {
+        $group: { _id: '$pharmacyId', total: { $sum: '$amount' }, count: { $sum: 1 } }
+      },
+      {
+        $lookup: { from: 'pharmacies', localField: '_id', foreignField: '_id', as: 'ph' }
+      },
+      { $unwind: '$ph' },
+      { $project: { pharmacyId: '$_id', pharmacyName: '$ph.name', city: '$ph.city', total: 1, count: 1 } },
+      { $sort: { total: -1 } }
+    ]),
+    Collection.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+          total: { $sum: '$amount' },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]),
+    Collection.find(match)
+      .populate('pharmacyId', 'name city')
+      .populate('collectedBy', 'name')
+      .sort({ date: -1 })
+      .limit(500)
+      .lean()
+  ]);
+
+  const g = grand[0] || { total: 0, count: 0 };
+  return {
+    period: { from: from || null, to: to || null },
+    summary: { totalAmount: roundPKR(g.total), count: g.count },
+    byCollector: byCollector.map((x) => ({
+      collectorType: x._id,
+      total: roundPKR(x.total),
+      count: x.count
+    })),
+    byPharmacy: byPharmacy.map((x) => ({
+      pharmacyId: x.pharmacyId,
+      pharmacyName: x.pharmacyName,
+      city: x.city,
+      total: roundPKR(x.total),
+      count: x.count
+    })),
+    byDay: byDay.map((x) => ({ date: x._id, total: roundPKR(x.total), count: x.count })),
+    recentRows: rows
+  };
+};
+
+const settlementsPeriod = async (companyId, from, to, filters = {}) => {
+  const cid = objectId(companyId);
+  const match = { companyId: cid, isDeleted: nd };
+  if (from || to) {
+    match.date = {};
+    if (from) match.date.$gte = new Date(from);
+    if (to) match.date.$lte = endOfDay(to);
+  }
+  if (filters.distributorId) match.distributorId = objectId(filters.distributorId);
+  if (filters.direction) match.direction = filters.direction;
+
+  const [grand, byDirection, byDistributor, byDay, rows] = await Promise.all([
+    Settlement.aggregate([{ $match: match }, { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } }]),
+    Settlement.aggregate([
+      { $match: match },
+      { $group: { _id: '$direction', total: { $sum: '$amount' }, count: { $sum: 1 } } }
+    ]),
+    Settlement.aggregate([
+      { $match: match },
+      { $group: { _id: '$distributorId', total: { $sum: '$amount' }, count: { $sum: 1 } } },
+      {
+        $lookup: { from: 'distributors', localField: '_id', foreignField: '_id', as: 'd' }
+      },
+      { $unwind: '$d' },
+      { $project: { distributorId: '$_id', distributorName: '$d.name', city: '$d.city', total: 1, count: 1 } },
+      { $sort: { total: -1 } }
+    ]),
+    Settlement.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$date' } },
+          total: { $sum: '$amount' },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]),
+    Settlement.find(match)
+      .populate('distributorId', 'name city')
+      .populate('settledBy', 'name')
+      .sort({ date: -1 })
+      .limit(500)
+      .lean()
+  ]);
+
+  const g = grand[0] || { total: 0, count: 0 };
+  const d2c = byDirection.find((x) => x._id === SETTLEMENT_DIRECTION.DISTRIBUTOR_TO_COMPANY);
+  const c2d = byDirection.find((x) => x._id === SETTLEMENT_DIRECTION.COMPANY_TO_DISTRIBUTOR);
+
+  return {
+    period: { from: from || null, to: to || null },
+    summary: { totalAmount: roundPKR(g.total), count: g.count },
+    distributorToCompany: {
+      total: roundPKR(d2c?.total || 0),
+      count: d2c?.count || 0
+    },
+    companyToDistributor: {
+      total: roundPKR(c2d?.total || 0),
+      count: c2d?.count || 0
+    },
+    byDirection: byDirection.map((x) => ({ direction: x._id, total: roundPKR(x.total), count: x.count })),
+    byDistributor: byDistributor.map((x) => ({
+      distributorId: x.distributorId,
+      distributorName: x.distributorName,
+      city: x.city,
+      total: roundPKR(x.total),
+      count: x.count
+    })),
+    byDay: byDay.map((x) => ({ date: x._id, total: roundPKR(x.total), count: x.count })),
+    recentRows: rows
+  };
+};
+
+/** Money-in / money-out story for the company in a period (collections + settlements). */
+const financialCashSummary = async (companyId, from, to, filters = {}) => {
+  const colFilters = {
+    pharmacyId: filters.pharmacyId,
+    collectorType: filters.collectorType
+  };
+  const setFilters = {
+    distributorId: filters.distributorId,
+    direction: filters.direction
+  };
+  const col = await collectionsPeriod(companyId, from, to, colFilters);
+  const set = await settlementsPeriod(companyId, from, to, setFilters);
+
+  const collectionsTotal = col.summary.totalAmount;
+  const inFromDistributors = set.distributorToCompany.total;
+  const outToDistributors = set.companyToDistributor.total;
+  const net = roundPKR(collectionsTotal + inFromDistributors - outToDistributors);
+
+  return {
+    period: { from: from || null, to: to || null },
+    pharmacyCollectionsTotal: collectionsTotal,
+    collectionsDetail: col.summary,
+    settlementsInFromDistributors: inFromDistributors,
+    settlementsOutToDistributors: outToDistributors,
+    /** Collections + D→C settlements − C→D settlements (cash-like view; not full P&L). */
+    netCashStyleMovement: net,
+    notes: [
+      'Pharmacy collections are amounts recorded against pharmacy receivables (FIFO on server).',
+      'Distributor→company settlements are additional cash in from distributors.',
+      'Company→distributor settlements are cash out to distributors.',
+      'Legacy Payment documents (if any) are included in cash-flow legacyPayments series, not in collections total.'
+    ]
+  };
+};
+
+/** Single endpoint: balances + optional period activity (if from/to provided). */
+const financialOverview = async (companyId, query = {}) => {
+  const { from, to, pharmacyId, distributorId } = query;
+  const [pharmacies, distributors] = await Promise.all([
+    pharmacyBalances(companyId, { pharmacyId }),
+    distributorBalances(companyId, { distributorId })
+  ]);
+
+  const out = {
+    generatedAt: new Date().toISOString(),
+    pharmacyReceivables: pharmacies,
+    distributorClearing: distributors
+  };
+
+  if (from || to) {
+    out.period = { from: from || null, to: to || null };
+    const periodFilters = {
+      pharmacyId,
+      collectorType: query.collectorType,
+      distributorId,
+      direction: query.direction
+    };
+    out.collections = await collectionsPeriod(companyId, from, to, {
+      pharmacyId,
+      collectorType: query.collectorType
+    });
+    out.settlements = await settlementsPeriod(companyId, from, to, {
+      distributorId,
+      direction: query.direction
+    });
+    out.cashSummary = await financialCashSummary(companyId, from, to, periodFilters);
+  }
+
+  return out;
+};
+
+module.exports = {
+  dashboard,
+  sales,
+  profit,
+  expenses,
+  inventoryValuation,
+  doctorROI,
+  repPerformance,
+  outstanding,
+  cashFlow,
+  pharmacyBalances,
+  pharmacyBalanceDetail,
+  distributorBalances,
+  distributorBalanceDetail,
+  collectionsPeriod,
+  settlementsPeriod,
+  financialCashSummary,
+  financialOverview
+};

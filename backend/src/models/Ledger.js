@@ -12,7 +12,12 @@ const ledgerSchema = new mongoose.Schema(
     referenceType: { type: String, enum: Object.values(LEDGER_REFERENCE_TYPE), required: true },
     referenceId: { type: mongoose.Schema.Types.ObjectId, required: true },
     description: { type: String },
-    date: { type: Date, default: Date.now }
+    date: { type: Date, default: Date.now },
+    meta: {
+      deliveryId: { type: mongoose.Schema.Types.ObjectId, ref: 'DeliveryRecord' },
+      orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' },
+      portion: { type: String }
+    }
   },
   { timestamps: true }
 );
