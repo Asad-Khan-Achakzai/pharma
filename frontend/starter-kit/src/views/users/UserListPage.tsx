@@ -46,6 +46,8 @@ const PERMISSION_GROUPS: Record<string, string[]> = {
   users: ['users.view', 'users.create', 'users.edit', 'users.delete']
 }
 
+const ALL_PERMISSIONS: string[] = Object.values(PERMISSION_GROUPS).flat()
+
 const fuzzyFilter: FilterFn<any> = (row, columnId, value, addMeta) => { const r = rankItem(row.getValue(columnId), value); addMeta({ itemRank: r }); return r.passed }
 const columnHelper = createColumnHelper<User>()
 
@@ -107,6 +109,14 @@ const UserListPage = () => {
     setForm(prev => ({ ...prev, permissions: prev.permissions.includes(perm) ? prev.permissions.filter(p => p !== perm) : [...prev.permissions, perm] }))
   }
 
+  const selectAllPermissions = useCallback(() => {
+    setForm(prev => ({ ...prev, permissions: [...ALL_PERMISSIONS] }))
+  }, [])
+
+  const clearAllPermissions = useCallback(() => {
+    setForm(prev => ({ ...prev, permissions: [] }))
+  }, [])
+
   const columns = useMemo<ColumnDef<User, any>[]>(() => [
     columnHelper.accessor('name', { header: 'Name', cell: ({ row }) => <Typography fontWeight={500}>{row.original.name}</Typography> }),
     columnHelper.accessor('email', { header: 'Email' }),
@@ -149,7 +159,17 @@ const UserListPage = () => {
             <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='Phone' value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} /></Grid>
             {form.role === 'MEDICAL_REP' && (
               <Grid size={{ xs: 12 }}>
-                <Typography variant='h6' className='mbe-2'>Permissions</Typography>
+                <div className='flex flex-wrap items-center justify-between gap-2 mbe-2'>
+                  <Typography variant='h6'>Permissions</Typography>
+                  <div className='flex flex-wrap gap-2'>
+                    <Button size='small' variant='outlined' onClick={selectAllPermissions}>
+                      Select all
+                    </Button>
+                    <Button size='small' variant='outlined' onClick={clearAllPermissions}>
+                      Clear all
+                    </Button>
+                  </div>
+                </div>
                 {Object.entries(PERMISSION_GROUPS).map(([group, perms]) => (
                   <div key={group} className='mbe-2'>
                     <Typography variant='subtitle2' className='capitalize mbe-1'>{group}</Typography>

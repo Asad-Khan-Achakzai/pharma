@@ -18,6 +18,8 @@ const targetRoutes = require('./target.routes');
 const weeklyPlanRoutes = require('./weeklyPlan.routes');
 const expenseRoutes = require('./expense.routes');
 const payrollRoutes = require('./payroll.routes');
+const attendanceRoutes = require('./attendance.routes');
+const salaryStructureRoutes = require('./salaryStructure.routes');
 const reportRoutes = require('./report.routes');
 const auditLogRoutes = require('./auditLog.routes');
 
@@ -38,6 +40,8 @@ router.use('/targets', targetRoutes);
 router.use('/weekly-plans', weeklyPlanRoutes);
 router.use('/expenses', expenseRoutes);
 router.use('/payroll', payrollRoutes);
+router.use('/attendance', attendanceRoutes);
+router.use('/salary-structures', salaryStructureRoutes);
 router.use('/reports', reportRoutes);
 router.use('/audit-logs', auditLogRoutes);
 

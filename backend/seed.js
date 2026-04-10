@@ -85,7 +85,8 @@ async function seed() {
       'pharmacies.view', 'pharmacies.create', 'doctors.view', 'doctors.create',
       'orders.view', 'orders.create', 'payments.view', 'payments.create',
       'ledger.view', 'targets.view', 'weeklyPlans.view', 'weeklyPlans.create',
-      'weeklyPlans.edit', 'reports.view'
+      'weeklyPlans.edit', 'reports.view',
+      'attendance.mark', 'attendance.view'
     ]
   });
 
@@ -98,7 +99,8 @@ async function seed() {
       'pharmacies.view', 'pharmacies.create', 'doctors.view', 'doctors.create',
       'orders.view', 'orders.create', 'payments.view', 'payments.create',
       'ledger.view', 'targets.view', 'weeklyPlans.view', 'weeklyPlans.create',
-      'weeklyPlans.edit', 'reports.view'
+      'weeklyPlans.edit', 'reports.view',
+      'attendance.mark', 'attendance.view'
     ]
   });
   console.log('Created 3 users (1 admin, 2 reps)');

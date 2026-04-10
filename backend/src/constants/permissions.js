@@ -12,6 +12,7 @@ const PERMISSIONS = {
   weeklyPlans:  ['view', 'create', 'edit'],
   expenses:     ['view', 'create', 'edit', 'delete'],
   payroll:      ['view', 'create', 'edit', 'pay'],
+  attendance:   ['view', 'mark'],
   reports:      ['view'],
   users:        ['view', 'create', 'edit', 'delete']
 };

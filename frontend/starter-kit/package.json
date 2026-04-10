@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
+    "dev:capped": "NODE_OPTIONS='--max-old-space-size=8192' next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",

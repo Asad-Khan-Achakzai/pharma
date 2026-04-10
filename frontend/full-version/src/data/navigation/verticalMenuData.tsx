@@ -260,10 +260,10 @@ const verticalMenuData = (dictionary: Awaited<ReturnType<typeof getDictionary>>)
             icon: 'tabler-circle',
             href: '/apps/roles'
           },
-          {
-            label: dictionary['navigation'].permissions,
-            icon: 'tabler-circle',
-            href: '/apps/permissions'
+      {
+        label: dictionary['navigation'].permissions,
+        icon: 'tabler-circle',
+        href: '/apps/permissions'
           }
         ]
       },

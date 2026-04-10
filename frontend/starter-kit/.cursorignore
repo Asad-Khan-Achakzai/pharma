@@ -1,0 +1,9 @@
+# Heavy paths: keep Cursor indexing and AI context off dependency trees and build output.
+node_modules/
+.next/
+out/
+build/
+dist/
+.turbo/
+coverage/
+.cache/

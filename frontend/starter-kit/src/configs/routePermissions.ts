@@ -19,6 +19,8 @@ export const routePermissions: Array<{ path: string; permission: string }> = [
   { path: '/targets', permission: 'targets.view' },
   { path: '/weekly-plans', permission: 'weeklyPlans.view' },
   { path: '/expenses', permission: 'expenses.view' },
+  { path: '/salary-structure', permission: 'payroll.view' },
+  { path: '/attendance', permission: 'attendance.view' },
   { path: '/payroll', permission: 'payroll.view' },
   { path: '/reports', permission: 'reports.view' },
   { path: '/users', permission: 'users.view' },

@@ -17,6 +17,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { createColumnHelper, flexRender, getCoreRowModel, getPaginationRowModel, useReactTable } from '@tanstack/react-table'
 import type { ColumnDef } from '@tanstack/react-table'
 import CustomTextField from '@core/components/mui/TextField'
+import AppReactDatepicker from '@/libs/styles/AppReactDatepicker'
 import TablePaginationComponent from '@components/TablePaginationComponent'
 import { targetsService } from '@/services/targets.service'
 import { usersService } from '@/services/users.service'
@@ -24,6 +25,17 @@ import tableStyles from '@core/styles/table.module.css'
 
 type Target = { _id: string; medicalRepId: any; month: string; salesTarget: number; achievedSales: number; packsTarget: number; achievedPacks: number }
 const columnHelper = createColumnHelper<Target>()
+
+const parseYyyyMm = (s: string): Date | null => {
+  const t = s.trim()
+  if (!/^\d{4}-\d{2}$/.test(t)) return null
+  const [y, m] = t.split('-').map(Number)
+  if (m < 1 || m > 12) return null
+  return new Date(y, m - 1, 1)
+}
+
+const formatYyyyMm = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 
 const TargetsPage = () => {
   const { hasPermission } = useAuth()
@@ -63,7 +75,15 @@ const TargetsPage = () => {
 
   return (
     <Card>
-      <CardHeader title='Targets' action={canCreate && <Button variant='contained' startIcon={<i className='tabler-plus' />} onClick={() => { setForm({ medicalRepId: '', month: '', salesTarget: 0, packsTarget: 0 }); setOpen(true) }}>Add Target</Button>} />
+      <CardHeader title='Targets' action={canCreate && <Button variant='contained' startIcon={<i className='tabler-plus' />} onClick={() => {
+              setForm({
+                medicalRepId: '',
+                month: formatYyyyMm(new Date()),
+                salesTarget: 0,
+                packsTarget: 0
+              })
+              setOpen(true)
+            }}>Add Target</Button>} />
       <div className='overflow-x-auto'>
         <table className={tableStyles.table}>
           <thead>{table.getHeaderGroups().map(hg => <tr key={hg.id}>{hg.headers.map(h => <th key={h.id}>{flexRender(h.column.columnDef.header, h.getContext())}</th>)}</tr>)}</thead>
@@ -76,7 +96,18 @@ const TargetsPage = () => {
         <DialogContent>
           <Grid container spacing={4} className='pbs-4'>
             <Grid size={{ xs: 12, sm: 6 }}><CustomTextField select required fullWidth label='Medical Rep' value={form.medicalRepId} onChange={e => setForm(p => ({ ...p, medicalRepId: e.target.value }))}>{users.filter((u: any) => u.role === 'MEDICAL_REP').map((u: any) => <MenuItem key={u._id} value={u._id}>{u.name}</MenuItem>)}</CustomTextField></Grid>
-            <Grid size={{ xs: 12, sm: 6 }}><CustomTextField required fullWidth label='Month (YYYY-MM)' value={form.month} onChange={e => setForm(p => ({ ...p, month: e.target.value }))} placeholder='2026-04' /></Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <AppReactDatepicker
+                showMonthYearPicker
+                selected={parseYyyyMm(form.month) ?? new Date()}
+                id='targets-month-picker'
+                dateFormat='yyyy-MM'
+                onChange={(date: Date | null) => {
+                  setForm(p => ({ ...p, month: date ? formatYyyyMm(date) : '' }))
+                }}
+                customInput={<CustomTextField fullWidth required label='Month (YYYY-MM)' helperText='YYYY-MM' />}
+              />
+            </Grid>
             <Grid size={{ xs: 6 }}><CustomTextField required fullWidth label='Sales Target' type='number' value={form.salesTarget} onChange={e => setForm(p => ({ ...p, salesTarget: +e.target.value }))} /></Grid>
             <Grid size={{ xs: 6 }}><CustomTextField required fullWidth label='Packs Target' type='number' value={form.packsTarget} onChange={e => setForm(p => ({ ...p, packsTarget: +e.target.value }))} /></Grid>
           </Grid>

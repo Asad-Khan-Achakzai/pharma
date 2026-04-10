@@ -50,7 +50,7 @@ const VerticalMenu = ({ scrollMenu }: Props) => {
 
   const { isBreakpointReached, transitionDuration } = verticalNavOptions
   const filteredMenuData = filterMenuByPermission(verticalMenuData(), hasPermission)
-console.log('filteredMenuData',filteredMenuData)
+
   const ScrollWrapper = isBreakpointReached ? 'div' : PerfectScrollbar
 
   return (

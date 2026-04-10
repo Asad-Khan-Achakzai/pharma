@@ -37,17 +37,31 @@
   "stylelint.enable": true,
   "stylelint.validate": [
     "css",
-    "scss",
-    "typescript",
-    "typescriptreact"
+    "scss"
   ],
   "markdown.extension.toc.updateOnSave": false,
   "files.insertFinalNewline": true,
   "editor.linkedEditing": true,
   "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.tsserver.maxTsServerMemory": 4096,
+  "eslint.run": "onSave",
   "cSpell.words": [
     "customizer",
     "iconify",
     "tanstack"
-  ]
+  ],
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/.next/**": true,
+    "**/.git/objects/**": true,
+    "**/.turbo/**": true,
+    "**/dist/**": true,
+    "**/out/**": true,
+    "**/coverage/**": true,
+    "**/.cache/**": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/.next": true
+  }
 }
