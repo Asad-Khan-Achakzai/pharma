@@ -25,7 +25,7 @@ import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
 import tableStyles from '@core/styles/table.module.css'
 
 type Expense = { _id: string; category: string; amount: number; description: string; date: string }
-const categories = ['DOCTOR_INVESTMENT','SALARY','RENT','LOGISTICS','OFFICE','OTHER']
+const categories = ['LOGISTICS','OFFICE','OTHER']
 const fuzzyFilter: FilterFn<any> = (row, columnId, value, addMeta) => { const r = rankItem(row.getValue(columnId), value); addMeta({ itemRank: r }); return r.passed }
 const columnHelper = createColumnHelper<Expense>()
 

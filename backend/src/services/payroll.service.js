@@ -43,7 +43,6 @@ const sumMedicalRepSalesForMonth = async (companyId, employeeId, monthStr) => {
 const buildFromStructure = (structure, salesTotal, attendanceStats) => {
   const basic = structure.basicSalary;
   const totalDaysInMonth = attendanceStats.totalDaysInMonth;
-  const perDaySalary = totalDaysInMonth > 0 ? roundPKR(basic / totalDaysInMonth) : 0;
 
   const dailyAllowanceRate = roundPKR(structure.dailyAllowance || 0);
   const { presentDays, absentDays, halfDays, leaveDays } = attendanceStats;
@@ -81,9 +80,8 @@ const buildFromStructure = (structure, salesTotal, attendanceStats) => {
 
   const grossSalary = roundPKR(basic + allowancesSum + commissionAmount + dailyAllowanceTotal);
 
-  const attendanceDeduction = roundPKR(
-    absentDays * perDaySalary + leaveDays * perDaySalary + halfDays * perDaySalary * 0.5
-  );
+  /** No pay cut for absences until product supports configurable attendance deductions. */
+  const attendanceDeduction = 0;
 
   const netSalary = roundPKR(grossSalary - deductionsSum - attendanceDeduction);
 
