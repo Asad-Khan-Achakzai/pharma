@@ -61,6 +61,7 @@ const payrollSchema = new mongoose.Schema(
 );
 
 payrollSchema.index({ companyId: 1, employeeId: 1, month: 1 }, { unique: true });
+payrollSchema.index({ companyId: 1, status: 1, paidOn: -1 });
 
 payrollSchema.plugin(softDeletePlugin);
 

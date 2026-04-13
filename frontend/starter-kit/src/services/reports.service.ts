@@ -25,5 +25,13 @@ export const reportsService = {
   settlementsPeriod: (params?: Record<string, string | undefined>) =>
     api.get('/reports/financial/settlements', { params }),
   financialCashSummary: (params?: { from?: string; to?: string }) =>
-    api.get('/reports/financial/cash-summary', { params })
+    api.get('/reports/financial/cash-summary', { params }),
+
+  /** Profit & cost (transaction-based revenue) */
+  profitSummary: (params?: Record<string, string | undefined>) => api.get('/reports/summary', { params }),
+  profitRevenue: (params?: Record<string, string | undefined>) => api.get('/reports/revenue', { params }),
+  profitCosts: (params?: Record<string, string | undefined>) => api.get('/reports/costs', { params }),
+  productProfitability: (params?: Record<string, string | undefined>) =>
+    api.get('/reports/product-profitability', { params }),
+  profitTrends: (params?: Record<string, string | undefined>) => api.get('/reports/trends', { params })
 }

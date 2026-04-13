@@ -19,8 +19,10 @@
  *   - Audit log entries
  *
  * Usage:
- *   node seed.js          # seeds data
+ *   node seed.js          # seeds data (uses MONGODB_URI, default pharma_erp)
  *   node seed.js --drop   # drops all collections first, then seeds
+ *
+ * Profit reports expect SALE transactions with referenceType DELIVERY + delivery line economics.
  *
  * Login credentials after seeding:
  *   Admin:     admin@pharmaplus.pk  / Admin@123
@@ -175,6 +177,25 @@ async function seed() {
 
   await DistributorInventory.insertMany(inventoryRecords);
   await StockTransfer.insertMany(transferRecords);
+
+  /** Recent transfer (shipping cost visible in current-month profit reports) */
+  const recentItems = products.slice(0, 3).map((prod) => ({
+    productId: prod._id,
+    quantity: 40,
+    castingAtTime: prod.casting,
+    shippingCostPerUnit: shippingPerUnit
+  }));
+  const recentShip = recentItems.reduce((s, i) => s + i.quantity * i.shippingCostPerUnit, 0);
+  await StockTransfer.create({
+    companyId: C,
+    distributorId: distributors[0]._id,
+    items: recentItems,
+    totalShippingCost: recentShip,
+    transferDate: new Date(Date.now() - 2 * 86400000),
+    notes: 'Replenishment (seed — current month)',
+    createdBy: admin._id
+  });
+
   console.log(`Created inventory for ${distributors.length} distributors (${inventoryRecords.length} records)`);
 
   // ─── Pharmacies ───
@@ -301,22 +322,22 @@ async function seed() {
   // ─── Orders ───
   // We'll create 10 orders and manually handle delivery / return for some
   const orderDefs = [
-    // DELIVERED orders
-    { pharmacy: 0, doctor: 0, distributor: 0, rep: rep1, items: [{ p: 0, qty: 50 }, { p: 1, qty: 30 }],  status: 'DELIVERED', daysAgo: 20 },
-    { pharmacy: 1, doctor: 2, distributor: 2, rep: rep1, items: [{ p: 2, qty: 40 }, { p: 3, qty: 25 }],  status: 'DELIVERED', daysAgo: 15 },
-    { pharmacy: 2, doctor: 3, distributor: 1, rep: rep2, items: [{ p: 4, qty: 60 }, { p: 5, qty: 35 }],  status: 'DELIVERED', daysAgo: 10 },
+    // DELIVERED — mix of dates so profit/trends show activity this month
+    { pharmacy: 0, doctor: 0, distributor: 0, rep: rep1, items: [{ p: 0, qty: 50 }, { p: 1, qty: 30 }],  status: 'DELIVERED', daysAgo: 22 },
+    { pharmacy: 1, doctor: 2, distributor: 2, rep: rep1, items: [{ p: 2, qty: 40 }, { p: 3, qty: 25 }],  status: 'DELIVERED', daysAgo: 14 },
+    { pharmacy: 2, doctor: 3, distributor: 1, rep: rep2, items: [{ p: 4, qty: 60 }, { p: 5, qty: 35 }],  status: 'DELIVERED', daysAgo: 6 },
     // PARTIALLY_DELIVERED
-    { pharmacy: 3, doctor: 5, distributor: 0, rep: rep2, items: [{ p: 0, qty: 80 }, { p: 6, qty: 45 }],  status: 'PARTIALLY_DELIVERED', daysAgo: 5 },
+    { pharmacy: 3, doctor: 5, distributor: 0, rep: rep2, items: [{ p: 0, qty: 80 }, { p: 6, qty: 45 }],  status: 'PARTIALLY_DELIVERED', daysAgo: 4 },
     // PARTIALLY_RETURNED (was delivered, then partial return)
-    { pharmacy: 4, doctor: 6, distributor: 2, rep: rep1, items: [{ p: 7, qty: 30 }, { p: 1, qty: 20 }],  status: 'PARTIALLY_RETURNED', daysAgo: 18 },
+    { pharmacy: 4, doctor: 6, distributor: 2, rep: rep1, items: [{ p: 7, qty: 30 }, { p: 1, qty: 20 }],  status: 'PARTIALLY_RETURNED', daysAgo: 17 },
     // PENDING orders
     { pharmacy: 0, doctor: 1, distributor: 0, rep: rep1, items: [{ p: 2, qty: 35 }, { p: 5, qty: 20 }],  status: 'PENDING', daysAgo: 2 },
     { pharmacy: 5, doctor: 7, distributor: 1, rep: rep2, items: [{ p: 3, qty: 50 }, { p: 4, qty: 40 }],  status: 'PENDING', daysAgo: 1 },
     { pharmacy: 1, doctor: 2, distributor: 2, rep: rep2, items: [{ p: 6, qty: 60 }, { p: 7, qty: 25 }],  status: 'PENDING', daysAgo: 0 },
-    // Another DELIVERED
-    { pharmacy: 2, doctor: 4, distributor: 1, rep: rep1, items: [{ p: 0, qty: 25 }, { p: 3, qty: 30 }, { p: 5, qty: 15 }], status: 'DELIVERED', daysAgo: 8 },
+    // Another DELIVERED (recent — good for monthly reports)
+    { pharmacy: 2, doctor: 4, distributor: 1, rep: rep1, items: [{ p: 0, qty: 25 }, { p: 3, qty: 30 }, { p: 5, qty: 15 }], status: 'DELIVERED', daysAgo: 3 },
     // CANCELLED
-    { pharmacy: 4, doctor: 6, distributor: 2, rep: rep2, items: [{ p: 1, qty: 40 }], status: 'CANCELLED', daysAgo: 12 }
+    { pharmacy: 4, doctor: 6, distributor: 2, rep: rep2, items: [{ p: 1, qty: 40 }], status: 'CANCELLED', daysAgo: 11 }
   ];
 
   const createdOrders = [];
@@ -374,6 +395,7 @@ async function seed() {
     if (['DELIVERED', 'PARTIALLY_DELIVERED', 'PARTIALLY_RETURNED'].includes(def.status)) {
       const deliverItems = [];
       let totalAmount = 0, totalCost = 0, totalProfit = 0;
+      let tpSubtotal = 0, distributorShareTotal = 0, companyShareRoll = 0;
 
       for (let i = 0; i < order.items.length; i++) {
         const item = order.items[i];
@@ -392,6 +414,14 @@ async function seed() {
         const avgCost = inv ? inv.avgCostPerUnit : roundPKR(prod.casting + 5);
         const sellingPrice = roundPKR(item.tpAtTime * (1 - item.distributorDiscount / 100) * (1 - item.clinicDiscount / 100));
         const profitPU = roundPKR(sellingPrice - avgCost);
+        const tpLineTotal = roundPKR(prod.tp * deliverQty);
+        const linePharmacyNet = roundPKR(sellingPrice * deliverQty);
+        const distributorShare = roundPKR(tpLineTotal * (dist.discountOnTP / 100));
+        const companyShare = roundPKR(linePharmacyNet - distributorShare);
+
+        tpSubtotal += tpLineTotal;
+        distributorShareTotal += distributorShare;
+        companyShareRoll += companyShare;
 
         deliverItems.push({
           productId: prod._id,
@@ -399,10 +429,14 @@ async function seed() {
           avgCostAtTime: avgCost,
           finalSellingPrice: sellingPrice,
           profitPerUnit: profitPU,
-          totalProfit: roundPKR(profitPU * deliverQty)
+          totalProfit: roundPKR(profitPU * deliverQty),
+          tpLineTotal,
+          distributorShare,
+          linePharmacyNet,
+          companyShare
         });
 
-        totalAmount += roundPKR(sellingPrice * deliverQty);
+        totalAmount += linePharmacyNet;
         totalCost += roundPKR(avgCost * deliverQty);
         totalProfit += roundPKR(profitPU * deliverQty);
 
@@ -418,10 +452,14 @@ async function seed() {
       const invNum = `INV-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${String(invoiceSeq++).padStart(3, '0')}`;
       const deliveryDate = new Date(order.createdAt.getTime() + 86400000);
 
-      await DeliveryRecord.create({
+      const delivery = await DeliveryRecord.create({
         companyId: C, orderId: order._id, invoiceNumber: invNum,
         items: deliverItems,
         totalAmount: roundPKR(totalAmount), totalCost: roundPKR(totalCost), totalProfit: roundPKR(totalProfit),
+        tpSubtotal: roundPKR(tpSubtotal),
+        distributorShareTotal: roundPKR(distributorShareTotal),
+        pharmacyNetPayable: roundPKR(totalAmount),
+        companyShareTotal: roundPKR(companyShareRoll),
         deliveredBy: admin._id, deliveredAt: deliveryDate,
         createdBy: admin._id
       });
@@ -436,9 +474,9 @@ async function seed() {
       });
 
       await Transaction.create({
-        companyId: C, type: 'SALE', referenceType: 'DeliveryRecord', referenceId: order._id,
+        companyId: C, type: 'SALE', referenceType: 'DELIVERY', referenceId: delivery._id,
         revenue: roundPKR(totalAmount), cost: roundPKR(totalCost), profit: roundPKR(totalProfit),
-        date: deliveryDate, description: `Sale - ${order.orderNumber}`,
+        date: deliveryDate, description: `Sale - ${invNum}`,
         createdBy: admin._id
       });
 
@@ -486,7 +524,7 @@ async function seed() {
 
       const returnDate = new Date(order.createdAt.getTime() + 5 * 86400000);
 
-      await ReturnRecord.create({
+      const returnRecord = await ReturnRecord.create({
         companyId: C, orderId: order._id,
         items: returnItems,
         totalAmount: roundPKR(totalRetAmt), totalCost: roundPKR(totalRetCost), totalProfit: roundPKR(totalRetProfit),
@@ -504,7 +542,7 @@ async function seed() {
       });
 
       await Transaction.create({
-        companyId: C, type: 'RETURN', referenceType: 'ReturnRecord', referenceId: order._id,
+        companyId: C, type: 'RETURN', referenceType: 'RETURN', referenceId: returnRecord._id,
         revenue: roundPKR(totalRetAmt * -1), cost: roundPKR(totalRetCost * -1), profit: roundPKR(totalRetProfit),
         date: returnDate, description: `Return - ${order.orderNumber}`,
         createdBy: admin._id
@@ -632,7 +670,7 @@ async function seed() {
     });
   }
 
-  // Also create current month payroll as PENDING
+  // Current month payroll: mark PAID with paidOn so profit/cost reports include payroll in-date
   for (const pr of payrollDefs) {
     const netSalary = pr.baseSalary + pr.bonus - pr.deductions;
     await Payroll.create({
@@ -643,12 +681,13 @@ async function seed() {
       bonus: pr.bonus,
       deductions: pr.deductions,
       netSalary,
-      status: 'PENDING',
+      status: 'PAID',
+      paidOn: new Date(Date.now() - 1 * 86400000),
       createdBy: admin._id
     });
   }
 
-  console.log('Created payroll records');
+  console.log('Created payroll records (previous + current month PAID)');
 
   // ─── Audit Log ───
   const auditEntries = [

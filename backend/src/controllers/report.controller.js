@@ -1,4 +1,5 @@
 const reportService = require('../services/report.service');
+const profitManagementService = require('../services/profitManagement.service');
 const ApiResponse = require('../utils/ApiResponse');
 const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../middleware/asyncHandler');
@@ -51,6 +52,22 @@ const financialOverview = asyncHandler(async (req, res) => {
   ApiResponse.success(res, await reportService.financialOverview(req.companyId, req.query));
 });
 
+const profitSummary = asyncHandler(async (req, res) => {
+  ApiResponse.success(res, await profitManagementService.summary(req.companyId, req.query));
+});
+const profitRevenue = asyncHandler(async (req, res) => {
+  ApiResponse.success(res, await profitManagementService.revenue(req.companyId, req.query));
+});
+const profitCosts = asyncHandler(async (req, res) => {
+  ApiResponse.success(res, await profitManagementService.costs(req.companyId, req.query));
+});
+const profitProductProfitability = asyncHandler(async (req, res) => {
+  ApiResponse.success(res, await profitManagementService.productProfitability(req.companyId, req.query));
+});
+const profitTrends = asyncHandler(async (req, res) => {
+  ApiResponse.success(res, await profitManagementService.trends(req.companyId, req.query));
+});
+
 module.exports = {
   dashboard,
   sales,
@@ -68,5 +85,10 @@ module.exports = {
   collectionsPeriod,
   settlementsPeriod,
   financialCashSummary,
-  financialOverview
+  financialOverview,
+  profitSummary,
+  profitRevenue,
+  profitCosts,
+  profitProductProfitability,
+  profitTrends
 };

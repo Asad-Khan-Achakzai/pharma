@@ -19,6 +19,7 @@ const transactionSchema = new mongoose.Schema(
 
 transactionSchema.index({ companyId: 1, type: 1, date: -1 });
 transactionSchema.index({ companyId: 1, date: -1 });
+transactionSchema.index({ companyId: 1, referenceType: 1, referenceId: 1 });
 
 transactionSchema.plugin(softDeletePlugin);
 

@@ -15,6 +15,7 @@ import { showApiError } from '@/utils/apiErrors'
 import CustomTextField from '@core/components/mui/TextField'
 import { reportsService } from '@/services/reports.service'
 import FinancialReportsSection from '@/views/reports/FinancialReportsSection'
+import ProfitCostManagementSection from '@/views/reports/ProfitCostManagementSection'
 
 const formatPKR = (v: number) =>
   `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -66,12 +67,19 @@ const ReportsPage = () => {
         <Tabs value={tab} onChange={(_, v) => setTab(v)} className='mbe-4'>
           <Tab label='Operations' />
           <Tab label='Financial position & receipts' />
+          <Tab label='Profit & cost' />
         </Tabs>
       </Grid>
 
       {tab === 1 && (
         <Grid size={{ xs: 12 }}>
           <FinancialReportsSection />
+        </Grid>
+      )}
+
+      {tab === 2 && (
+        <Grid size={{ xs: 12 }}>
+          <ProfitCostManagementSection />
         </Grid>
       )}
 

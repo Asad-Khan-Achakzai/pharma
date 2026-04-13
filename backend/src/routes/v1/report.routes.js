@@ -26,4 +26,11 @@ router.get('/financial/collections', checkPermission('reports.view'), c.collecti
 router.get('/financial/settlements', checkPermission('reports.view'), c.settlementsPeriod);
 router.get('/financial/cash-summary', checkPermission('reports.view'), c.financialCashSummary);
 
+/** Profit & cost management (transaction-based revenue, auditable cost buckets) */
+router.get('/summary', checkPermission('reports.view'), c.profitSummary);
+router.get('/revenue', checkPermission('reports.view'), c.profitRevenue);
+router.get('/costs', checkPermission('reports.view'), c.profitCosts);
+router.get('/product-profitability', checkPermission('reports.view'), c.profitProductProfitability);
+router.get('/trends', checkPermission('reports.view'), c.profitTrends);
+
 module.exports = router;

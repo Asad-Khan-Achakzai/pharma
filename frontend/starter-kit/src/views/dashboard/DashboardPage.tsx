@@ -23,7 +23,9 @@ import CustomTextField from '@core/components/mui/TextField'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { reportsService } from '@/services/reports.service'
 import { attendanceService } from '@/services/attendance.service'
+import Link from 'next/link'
 import { useAuth } from '@/contexts/AuthContext'
+import { formatYyyyMmDd } from '@/utils/dateLocal'
 
 const AppReactApexCharts = dynamic(() => import('@/libs/styles/AppReactApexCharts'), { ssr: false })
 
@@ -88,8 +90,10 @@ const DashboardPage = () => {
   const [sortBy, setSortBy] = useState<'name' | 'status'>('name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [filterStatus, setFilterStatus] = useState<string>('')
+  const [plSnapshot, setPlSnapshot] = useState<any>(null)
 
   const textSecondary = 'var(--mui-palette-text-secondary)'
+  const canViewReports = hasPermission('reports.view')
 
   const loadAttendanceWidgets = useCallback(async () => {
     const canCompany =
@@ -133,6 +137,16 @@ const DashboardPage = () => {
   useEffect(() => {
     loadAttendanceWidgets()
   }, [loadAttendanceWidgets])
+
+  useEffect(() => {
+    if (!canViewReports) return
+    const end = new Date()
+    const start = new Date(end.getFullYear(), end.getMonth(), 1)
+    reportsService
+      .profitSummary({ startDate: formatYyyyMmDd(start), endDate: formatYyyyMmDd(end) })
+      .then(res => setPlSnapshot(res.data.data))
+      .catch(() => setPlSnapshot(null))
+  }, [canViewReports])
 
   const formatPstHm = (iso: string | undefined) => {
     if (!iso) return null
@@ -256,6 +270,56 @@ const DashboardPage = () => {
 
   return (
     <Grid container spacing={6}>
+      {canViewReports && plSnapshot && (
+        <Grid size={{ xs: 12 }}>
+          <Card>
+            <CardHeader
+              title='Profit & cost (this month)'
+              subheader='Transaction-based revenue vs full cost stack. Open Reports → Profit & cost for filters and charts.'
+              action={
+                <Button component={Link} href='/reports' size='small' variant='tonal'>
+                  Reports
+                </Button>
+              }
+            />
+            <CardContent>
+              <Grid container spacing={4}>
+                <Grid size={{ xs: 6, sm: 3 }}>
+                  <Typography variant='caption' color='text.secondary'>
+                    Revenue
+                  </Typography>
+                  <Typography fontWeight={600}>{formatPKR(plSnapshot.totalRevenue)}</Typography>
+                </Grid>
+                <Grid size={{ xs: 6, sm: 3 }}>
+                  <Typography variant='caption' color='text.secondary'>
+                    Total cost
+                  </Typography>
+                  <Typography fontWeight={600}>{formatPKR(plSnapshot.totalCost)}</Typography>
+                </Grid>
+                <Grid size={{ xs: 6, sm: 3 }}>
+                  <Typography variant='caption' color='text.secondary'>
+                    Net profit
+                  </Typography>
+                  <Typography fontWeight={600} color={plSnapshot.netProfit >= 0 ? 'success.main' : 'error.main'}>
+                    {formatPKR(plSnapshot.netProfit)}
+                  </Typography>
+                </Grid>
+                <Grid size={{ xs: 6, sm: 3 }}>
+                  <Typography variant='caption' color='text.secondary'>
+                    Margin
+                  </Typography>
+                  <Typography fontWeight={600}>
+                    {plSnapshot.profitMarginPercent != null
+                      ? `${Number(plSnapshot.profitMarginPercent).toFixed(1)}%`
+                      : '—'}
+                  </Typography>
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+        </Grid>
+      )}
+
       {(showCompanyAttendance || showMyAttendance) && (
         <Grid size={{ xs: 12 }}>
           <Grid container spacing={4}>
