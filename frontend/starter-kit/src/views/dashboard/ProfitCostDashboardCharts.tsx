@@ -8,7 +8,7 @@ import CardHeader from '@mui/material/CardHeader'
 import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
-import CircularProgress from '@mui/material/CircularProgress'
+import Skeleton from '@mui/material/Skeleton'
 import MenuItem from '@mui/material/MenuItem'
 import type { ApexOptions } from 'apexcharts'
 import CustomTextField from '@core/components/mui/TextField'
@@ -196,81 +196,124 @@ const ProfitCostDashboardCharts = () => {
             <Typography variant='subtitle2' color='text.secondary' className='mbe-2'>
               Filters
             </Typography>
-            <div className='flex flex-wrap gap-4 items-end'>
-              <AppReactDatepicker
-                selected={parseYyyyMmDd(startDate) ?? null}
-                id='dash-pl-start'
-                dateFormat='yyyy-MM-dd'
-                onChange={(d: Date | null) => setStartDate(d ? formatYyyyMmDd(d) : '')}
-                placeholderText='Start'
-                customInput={<CustomTextField label='Start' sx={{ minWidth: 200 }} />}
-              />
-              <AppReactDatepicker
-                selected={parseYyyyMmDd(endDate) ?? null}
-                id='dash-pl-end'
-                dateFormat='yyyy-MM-dd'
-                onChange={(d: Date | null) => setEndDate(d ? formatYyyyMmDd(d) : '')}
-                placeholderText='End'
-                customInput={<CustomTextField label='End' sx={{ minWidth: 200 }} />}
-              />
-              <CustomTextField
-                select
-                label='Product'
-                value={productId}
-                onChange={e => setProductId(e.target.value)}
-                sx={{ minWidth: 220 }}
-                disabled={lookupsLoading}
-              >
-                <MenuItem value=''>All products</MenuItem>
-                {productOptions.map((p: any) => (
-                  <MenuItem key={p._id} value={p._id}>
-                    {p.name}
-                  </MenuItem>
-                ))}
-              </CustomTextField>
-              <CustomTextField
-                select
-                label='Distributor'
-                value={distributorId}
-                onChange={e => setDistributorId(e.target.value)}
-                sx={{ minWidth: 220 }}
-                disabled={lookupsLoading}
-              >
-                <MenuItem value=''>All distributors</MenuItem>
-                {distributorOptions.map((d: any) => (
-                  <MenuItem key={d._id} value={d._id}>
-                    {d.name}
-                  </MenuItem>
-                ))}
-              </CustomTextField>
-              <CustomTextField
-                select
-                label='Employee (payroll filter)'
-                value={employeeId}
-                onChange={e => setEmployeeId(e.target.value)}
-                sx={{ minWidth: 220 }}
-                disabled={lookupsLoading}
-              >
-                <MenuItem value=''>All employees</MenuItem>
-                {employeeOptions.map((u: any) => (
-                  <MenuItem key={u._id} value={u._id}>
-                    {u.name}
-                  </MenuItem>
-                ))}
-              </CustomTextField>
-              <Button variant='contained' onClick={load} disabled={loading}>
-                Apply
-              </Button>
-            </div>
+            {lookupsLoading ? (
+              <div className='flex flex-wrap gap-4 items-end'>
+                <Skeleton variant='rounded' width={200} height={56} animation='wave' />
+                <Skeleton variant='rounded' width={200} height={56} animation='wave' />
+                <Skeleton variant='rounded' width={220} height={56} animation='wave' />
+                <Skeleton variant='rounded' width={220} height={56} animation='wave' />
+                <Skeleton variant='rounded' width={220} height={56} animation='wave' />
+                <Skeleton variant='rounded' width={88} height={36} animation='wave' />
+              </div>
+            ) : (
+              <div className='flex flex-wrap gap-4 items-end'>
+                <AppReactDatepicker
+                  selected={parseYyyyMmDd(startDate) ?? null}
+                  id='dash-pl-start'
+                  dateFormat='yyyy-MM-dd'
+                  onChange={(d: Date | null) => setStartDate(d ? formatYyyyMmDd(d) : '')}
+                  placeholderText='Start'
+                  customInput={<CustomTextField label='Start' sx={{ minWidth: 200 }} />}
+                />
+                <AppReactDatepicker
+                  selected={parseYyyyMmDd(endDate) ?? null}
+                  id='dash-pl-end'
+                  dateFormat='yyyy-MM-dd'
+                  onChange={(d: Date | null) => setEndDate(d ? formatYyyyMmDd(d) : '')}
+                  placeholderText='End'
+                  customInput={<CustomTextField label='End' sx={{ minWidth: 200 }} />}
+                />
+                <CustomTextField
+                  select
+                  label='Product'
+                  value={productId}
+                  onChange={e => setProductId(e.target.value)}
+                  sx={{ minWidth: 220 }}
+                >
+                  <MenuItem value=''>All products</MenuItem>
+                  {productOptions.map((p: any) => (
+                    <MenuItem key={p._id} value={p._id}>
+                      {p.name}
+                    </MenuItem>
+                  ))}
+                </CustomTextField>
+                <CustomTextField
+                  select
+                  label='Distributor'
+                  value={distributorId}
+                  onChange={e => setDistributorId(e.target.value)}
+                  sx={{ minWidth: 220 }}
+                >
+                  <MenuItem value=''>All distributors</MenuItem>
+                  {distributorOptions.map((d: any) => (
+                    <MenuItem key={d._id} value={d._id}>
+                      {d.name}
+                    </MenuItem>
+                  ))}
+                </CustomTextField>
+                <CustomTextField
+                  select
+                  label='Employee (payroll filter)'
+                  value={employeeId}
+                  onChange={e => setEmployeeId(e.target.value)}
+                  sx={{ minWidth: 220 }}
+                >
+                  <MenuItem value=''>All employees</MenuItem>
+                  {employeeOptions.map((u: any) => (
+                    <MenuItem key={u._id} value={u._id}>
+                      {u.name}
+                    </MenuItem>
+                  ))}
+                </CustomTextField>
+                <Button variant='contained' onClick={load} disabled={loading}>
+                  Apply
+                </Button>
+              </div>
+            )}
             <Typography variant='caption' color='text.secondary' display='block' className='mt-2'>
               Revenue uses delivery/return transactions; payroll uses paid-on date.
             </Typography>
           </div>
 
           {loading ? (
-            <div className='flex justify-center p-12'>
-              <CircularProgress />
-            </div>
+            <>
+              <Grid container spacing={4}>
+                {(['Revenue', 'Total cost', 'Net profit', 'Margin'] as const).map(label => (
+                  <Grid key={label} size={{ xs: 6, sm: 3 }}>
+                    <Typography variant='caption' color='text.secondary'>
+                      {label}
+                    </Typography>
+                    <Skeleton variant='text' width='88%' height={28} animation='wave' sx={{ mt: 0.5 }} />
+                  </Grid>
+                ))}
+              </Grid>
+              <Grid container spacing={4}>
+                <Grid size={{ xs: 12, lg: 8 }}>
+                  <Card variant='outlined'>
+                    <CardHeader title='Revenue vs cost vs profit' subheader='By month (trends)' />
+                    <CardContent>
+                      <Skeleton variant='rounded' width='100%' height={360} animation='wave' />
+                    </CardContent>
+                  </Card>
+                </Grid>
+                <Grid size={{ xs: 12, lg: 4 }}>
+                  <Card variant='outlined'>
+                    <CardHeader title='Cost breakdown' />
+                    <CardContent>
+                      <Skeleton variant='rounded' width='100%' height={360} animation='wave' />
+                    </CardContent>
+                  </Card>
+                </Grid>
+                <Grid size={{ xs: 12 }}>
+                  <Card variant='outlined'>
+                    <CardHeader title='Top products by revenue (delivery lines)' />
+                    <CardContent>
+                      <Skeleton variant='rounded' width='100%' height={380} animation='wave' />
+                    </CardContent>
+                  </Card>
+                </Grid>
+              </Grid>
+            </>
           ) : (
             <>
               <Grid container spacing={4}>

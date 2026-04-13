@@ -2,12 +2,12 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import dynamic from 'next/dynamic'
+import Box from '@mui/material/Box'
 import Grid from '@mui/material/Grid'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
 import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
-import CircularProgress from '@mui/material/CircularProgress'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
 import Table from '@mui/material/Table'
@@ -17,6 +17,7 @@ import TableContainer from '@mui/material/TableContainer'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import Paper from '@mui/material/Paper'
+import Skeleton from '@mui/material/Skeleton'
 import MenuItem from '@mui/material/MenuItem'
 import type { ApexOptions } from 'apexcharts'
 import CustomTextField from '@core/components/mui/TextField'
@@ -82,10 +83,12 @@ const DashboardPage = () => {
     user?.role === 'ADMIN' || user?.role === 'MEDICAL_REP' || hasPermission('attendance.mark')
   const [data, setData] = useState<any>(null)
   const [loadError, setLoadError] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [dashboardDataLoading, setDashboardDataLoading] = useState(true)
   const [todayBoard, setTodayBoard] = useState<TodayBoard | null>(null)
+  /** Start true so team card does not flash the error state before the first fetch. */
+  const [teamAttendanceLoading, setTeamAttendanceLoading] = useState(true)
   const [meToday, setMeToday] = useState<any>(null)
-  const [meTodayLoading, setMeTodayLoading] = useState(false)
+  const [meTodayLoading, setMeTodayLoading] = useState(true)
   const [checkingIn, setCheckingIn] = useState(false)
   const [checkingOut, setCheckingOut] = useState(false)
   const [markAbsentConfirmOpen, setMarkAbsentConfirmOpen] = useState(false)
@@ -105,15 +108,19 @@ const DashboardPage = () => {
       user?.role === 'ADMIN' || user?.role === 'MEDICAL_REP' || hasPermission('attendance.mark')
 
     if (canCompany) {
+      setTeamAttendanceLoading(true)
       try {
         const r = await attendanceService.today()
         setTodayBoard(r.data.data as TodayBoard)
       } catch (err) {
         showApiError(err, 'Failed to load team attendance')
         setTodayBoard(null)
+      } finally {
+        setTeamAttendanceLoading(false)
       }
     } else {
       setTodayBoard(null)
+      setTeamAttendanceLoading(false)
     }
 
     if (canMine) {
@@ -129,21 +136,24 @@ const DashboardPage = () => {
       }
     } else {
       setMeToday(null)
-      setMeTodayLoading(false)
+      /** Only clear loading when we know the user cannot use self-mark (auth ready). If `user` is still null, keep loading true so the card never flashes an empty “loaded” state. */
+      if (user) setMeTodayLoading(false)
     }
-  }, [hasPermission, user?.role])
+  }, [hasPermission, user?.role, user])
 
   useEffect(() => {
     const fetch = async () => {
-      setLoading(true)
+      setDashboardDataLoading(true)
+      setLoadError(false)
       try {
         const { data: res } = await reportsService.dashboard()
         setData(res.data)
       } catch (err) {
         showApiError(err, 'Failed to load dashboard')
         setLoadError(true)
+        setData(null)
       } finally {
-        setLoading(false)
+        setDashboardDataLoading(false)
       }
     }
     fetch()
@@ -288,17 +298,20 @@ const DashboardPage = () => {
     return [d.Present ?? 0, d.Absent ?? 0, d['Half-Day'] ?? 0, d.Leave ?? 0]
   }, [todayBoard?.distribution])
 
-  if (loading) return <div className='flex justify-center items-center min-bs-[40vh]'><CircularProgress /></div>
-  if (!data) return <Typography>{loadError ? 'Failed to load dashboard data' : ''}</Typography>
-
-  const kpis = [
-    { title: 'Total Sales', value: formatPKR(data.totalSales), icon: 'tabler-chart-line', color: 'primary' },
-    { title: 'Gross Profit', value: formatPKR(data.grossProfit), icon: 'tabler-trending-up', color: 'success' },
-    { title: 'Total Expenses', value: formatPKR(data.totalExpenses), icon: 'tabler-receipt', color: 'warning' },
-    { title: 'Net Profit', value: formatPKR(data.netProfit), icon: 'tabler-coin', color: 'info' },
-    { title: 'Total Paid', value: formatPKR(data.totalPaid), icon: 'tabler-cash', color: 'success' },
-    { title: 'Outstanding', value: formatPKR(data.totalOutstanding), icon: 'tabler-alert-circle', color: 'error' }
-  ]
+  const kpis = useMemo(
+    () =>
+      data
+        ? [
+            { title: 'Total Sales', value: formatPKR(data.totalSales), icon: 'tabler-chart-line', color: 'primary' },
+            { title: 'Gross Profit', value: formatPKR(data.grossProfit), icon: 'tabler-trending-up', color: 'success' },
+            { title: 'Total Expenses', value: formatPKR(data.totalExpenses), icon: 'tabler-receipt', color: 'warning' },
+            { title: 'Net Profit', value: formatPKR(data.netProfit), icon: 'tabler-coin', color: 'info' },
+            { title: 'Total Paid', value: formatPKR(data.totalPaid), icon: 'tabler-cash', color: 'success' },
+            { title: 'Outstanding', value: formatPKR(data.totalOutstanding), icon: 'tabler-alert-circle', color: 'error' }
+          ]
+        : [],
+    [data]
+  )
 
   return (
     <>
@@ -311,94 +324,171 @@ const DashboardPage = () => {
                 <Card>
                   <CardHeader title='My attendance today' />
                   <CardContent className='flex flex-col gap-3 items-start'>
-                    <Typography component='div' variant='body2' className='flex items-center gap-2 flex-wrap'>
-                      <span>Status:</span>
-                      <Chip
-                        size='small'
-                        label={
-                          meToday?.uiStatus === 'CHECKED_OUT'
-                            ? 'Checked out'
-                            : meToday?.uiStatus === 'PRESENT'
-                              ? 'Present'
-                              : 'Not marked'
-                        }
-                        color={
-                          meToday?.uiStatus === 'CHECKED_OUT'
-                            ? 'default'
-                            : meToday?.uiStatus === 'PRESENT'
-                              ? 'success'
-                              : 'warning'
-                        }
-                        variant='tonal'
-                      />
-                    </Typography>
-                    {meToday?.checkInTime && (
-                      <Typography variant='body2' color='text.secondary'>
-                        Check-in (PT): {formatPstHm(meToday.checkInTime as string) ?? '—'}
-                      </Typography>
-                    )}
-                    {meToday?.checkOutTime && (
-                      <Typography variant='body2' color='text.secondary'>
-                        Check-out (PT): {formatPstHm(meToday.checkOutTime as string) ?? '—'}
-                      </Typography>
-                    )}
-                    {meToday?.pstDate && (
-                      <Typography variant='caption' color='text.disabled'>
-                        Business date (Pacific): {meToday.pstDate}
-                      </Typography>
-                    )}
-                    <div className='flex flex-wrap gap-2'>
-                      <Button
-                        variant='contained'
-                        size='small'
-                        onClick={handleCheckIn}
-                        disabled={
-                          meTodayLoading ||
-                          checkingIn ||
-                          checkingOut ||
-                          !meToday?.canCheckIn
-                        }
+                    {meTodayLoading ? (
+                      <Box
+                        sx={{ width: '100%' }}
+                        aria-busy
+                        aria-label='Loading your attendance'
                       >
-                        {checkingIn ? 'Checking in...' : 'Check In'}
-                      </Button>
-                      <Button
-                        variant='tonal'
-                        color='secondary'
-                        size='small'
-                        onClick={handleCheckOut}
-                        disabled={
-                          meTodayLoading ||
-                          checkingIn ||
-                          checkingOut ||
-                          !meToday?.canCheckOut
-                        }
-                      >
-                        {checkingOut ? 'Checking out...' : 'Check Out'}
-                      </Button>
-                    </div>
+                        {/** Skeletons instead of CircularProgress — the SVG spinner often paints as a tiny dot before Emotion styles apply. */}
+                        <Skeleton variant='rounded' width='42%' height={28} animation='wave' sx={{ mb: 1.5 }} />
+                        <Skeleton variant='text' width='55%' animation='wave' />
+                        <Skeleton variant='text' width='48%' animation='wave' sx={{ mb: 2 }} />
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                          <Skeleton variant='rounded' width={100} height={32} />
+                          <Skeleton variant='rounded' width={100} height={32} />
+                        </Box>
+                      </Box>
+                    ) : (
+                      <>
+                        <Typography component='div' variant='body2' className='flex items-center gap-2 flex-wrap'>
+                          <span>Status:</span>
+                          <Chip
+                            size='small'
+                            label={
+                              meToday?.uiStatus === 'CHECKED_OUT'
+                                ? 'Checked out'
+                                : meToday?.uiStatus === 'PRESENT'
+                                  ? 'Present'
+                                  : 'Not marked'
+                            }
+                            color={
+                              meToday?.uiStatus === 'CHECKED_OUT'
+                                ? 'default'
+                                : meToday?.uiStatus === 'PRESENT'
+                                  ? 'success'
+                                  : 'warning'
+                            }
+                            variant='tonal'
+                          />
+                        </Typography>
+                        {meToday?.checkInTime && (
+                          <Typography variant='body2' color='text.secondary'>
+                            Check-in (PT): {formatPstHm(meToday.checkInTime as string) ?? '—'}
+                          </Typography>
+                        )}
+                        {meToday?.checkOutTime && (
+                          <Typography variant='body2' color='text.secondary'>
+                            Check-out (PT): {formatPstHm(meToday.checkOutTime as string) ?? '—'}
+                          </Typography>
+                        )}
+                        {meToday?.pstDate && (
+                          <Typography variant='caption' color='text.disabled'>
+                            Business date (Pacific): {meToday.pstDate}
+                          </Typography>
+                        )}
+                        <div className='flex flex-wrap gap-2'>
+                          <Button
+                            variant='contained'
+                            size='small'
+                            onClick={handleCheckIn}
+                            disabled={
+                              meTodayLoading ||
+                              checkingIn ||
+                              checkingOut ||
+                              !meToday?.canCheckIn
+                            }
+                          >
+                            {checkingIn ? 'Checking in...' : 'Check In'}
+                          </Button>
+                          <Button
+                            variant='tonal'
+                            color='secondary'
+                            size='small'
+                            onClick={handleCheckOut}
+                            disabled={
+                              meTodayLoading ||
+                              checkingIn ||
+                              checkingOut ||
+                              !meToday?.canCheckOut
+                            }
+                          >
+                            {checkingOut ? 'Checking out...' : 'Check Out'}
+                          </Button>
+                        </div>
+                      </>
+                    )}
                   </CardContent>
                 </Card>
               </Grid>
             )}
-            {showCompanyAttendance && todayBoard?.summary && (
+            {showCompanyAttendance && (
               <Grid size={{ xs: 12 }}>
                 <Card>
                   <CardHeader
                     title='Employees Working Today'
                     subheader={
-                      <div>
-                        <Typography variant='body2' color='text.secondary' component='span' display='block'>
-                          {`Total present: ${todayBoard.summary.present} · Staff tracked: ${todayBoard.summary.totalEmployees}`}
-                        </Typography>
-                        {isAdmin && (
-                          <Typography variant='caption' color='text.secondary' display='block' className='mt-1'>
-                            As an admin, use <strong>Mark absent</strong> if someone checked in by mistake.
+                      teamAttendanceLoading ? (
+                        <Box sx={{ pt: 0.5 }}>
+                          <Skeleton variant='text' width='55%' height={22} animation='wave' />
+                          <Skeleton variant='text' width='72%' height={18} animation='wave' sx={{ mt: 1 }} />
+                        </Box>
+                      ) : todayBoard?.summary ? (
+                        <div>
+                          <Typography variant='body2' color='text.secondary' component='span' display='block'>
+                            {`Total present: ${todayBoard.summary.present} · Staff tracked: ${todayBoard.summary.totalEmployees}`}
                           </Typography>
-                        )}
-                      </div>
+                          {isAdmin && (
+                            <Typography variant='caption' color='text.secondary' display='block' className='mt-1'>
+                              As an admin, use <strong>Mark absent</strong> if someone checked in by mistake.
+                            </Typography>
+                          )}
+                        </div>
+                      ) : undefined
                     }
                   />
                   <CardContent>
+                    {teamAttendanceLoading ? (
+                      <Grid container spacing={4}>
+                        <Grid size={{ xs: 12, lg: 7 }}>
+                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 2 }}>
+                            <Skeleton variant='rounded' width={140} height={40} animation='wave' />
+                            <Skeleton variant='rounded' width={120} height={40} animation='wave' />
+                            <Skeleton variant='rounded' width={160} height={40} animation='wave' />
+                          </Box>
+                          <TableContainer component={Paper} variant='outlined'>
+                            <Table size='small'>
+                              <TableHead>
+                                <TableRow>
+                                  <TableCell>Name</TableCell>
+                                  <TableCell>Status</TableCell>
+                                  <TableCell align='right'>Check-in (PT)</TableCell>
+                                  <TableCell align='right'>Check-out (PT)</TableCell>
+                                  {isAdmin && <TableCell align='right'>Actions</TableCell>}
+                                </TableRow>
+                              </TableHead>
+                              <TableBody>
+                                {[0, 1, 2, 3, 4].map(i => (
+                                  <TableRow key={i}>
+                                    <TableCell>
+                                      <Skeleton variant='text' width='70%' animation='wave' />
+                                    </TableCell>
+                                    <TableCell>
+                                      <Skeleton variant='rounded' width={72} height={24} animation='wave' />
+                                    </TableCell>
+                                    <TableCell align='right'>
+                                      <Skeleton variant='text' width={48} sx={{ ml: 'auto' }} animation='wave' />
+                                    </TableCell>
+                                    <TableCell align='right'>
+                                      <Skeleton variant='text' width={48} sx={{ ml: 'auto' }} animation='wave' />
+                                    </TableCell>
+                                    {isAdmin && (
+                                      <TableCell align='right'>
+                                        <Skeleton variant='rounded' width={88} height={28} sx={{ ml: 'auto' }} animation='wave' />
+                                      </TableCell>
+                                    )}
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </TableContainer>
+                        </Grid>
+                        <Grid size={{ xs: 12, lg: 5 }}>
+                          <Skeleton variant='text' width={160} height={24} animation='wave' sx={{ mb: 2 }} />
+                          <Skeleton variant='rounded' width='100%' height={320} animation='wave' />
+                        </Grid>
+                      </Grid>
+                    ) : todayBoard?.summary ? (
                     <Grid container spacing={4}>
                       <Grid size={{ xs: 12, lg: 7 }}>
                         <div className='flex flex-wrap gap-4 mbe-4'>
@@ -523,6 +613,11 @@ const DashboardPage = () => {
                         />
                       </Grid>
                     </Grid>
+                    ) : (
+                      <Typography color='text.secondary' variant='body2' className='p-2'>
+                        Team attendance could not be loaded. Try refreshing the page.
+                      </Typography>
+                    )}
                   </CardContent>
                 </Card>
               </Grid>
@@ -533,30 +628,86 @@ const DashboardPage = () => {
 
       {canViewReports && <ProfitCostDashboardCharts />}
 
-      {kpis.map((kpi, i) => (
-        <Grid key={i} size={{ xs: 12, sm: 6, md: 4, lg: 2 }}>
-          <Card>
-            <CardContent className='flex flex-col items-center gap-2 p-6'>
-              <i className={`${kpi.icon} text-3xl text-${kpi.color}`} />
-              <Typography variant='h6' className='text-center'>{kpi.value}</Typography>
-              <Typography variant='body2' color='text.secondary'>{kpi.title}</Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-      ))}
+      {dashboardDataLoading
+        ? Array.from({ length: 6 }).map((_, i) => (
+            <Grid key={`kpi-skel-${i}`} size={{ xs: 12, sm: 6, md: 4, lg: 2 }}>
+              <Card>
+                <CardContent className='flex flex-col items-center gap-2 p-6'>
+                  <Skeleton variant='circular' width={48} height={48} animation='wave' />
+                  <Skeleton variant='text' width='85%' height={36} animation='wave' />
+                  <Skeleton variant='text' width='65%' height={24} animation='wave' />
+                </CardContent>
+              </Card>
+            </Grid>
+          ))
+        : loadError
+          ? (
+            <Grid size={{ xs: 12 }}>
+              <Card>
+                <CardContent className='p-6'>
+                  <Typography color='error'>Summary metrics could not be loaded.</Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+            )
+          : kpis.map((kpi, i) => (
+              <Grid key={i} size={{ xs: 12, sm: 6, md: 4, lg: 2 }}>
+                <Card>
+                  <CardContent className='flex flex-col items-center gap-2 p-6'>
+                    <i className={`${kpi.icon} text-3xl text-${kpi.color}`} />
+                    <Typography variant='h6' className='text-center'>
+                      {kpi.value}
+                    </Typography>
+                    <Typography variant='body2' color='text.secondary'>
+                      {kpi.title}
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
 
       <Grid size={{ xs: 12 }}>
         <Card>
           <CardHeader title='Orders by Status' />
           <CardContent>
-            <div className='flex gap-4 flex-wrap'>
-              {Object.entries(data.ordersByStatus || {}).map(([status, count]) => (
-                <div key={status} className='flex flex-col items-center p-4 border rounded'>
-                  <Typography variant='h5'>{count as number}</Typography>
-                  <Typography variant='body2' color='text.secondary'>{status}</Typography>
-                </div>
-              ))}
-            </div>
+            {dashboardDataLoading ? (
+              <div className='flex gap-4 flex-wrap'>
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Box
+                    key={i}
+                    sx={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      p: 2,
+                      minWidth: 120,
+                      border: 1,
+                      borderColor: 'divider',
+                      borderRadius: 1
+                    }}
+                  >
+                    <Skeleton variant='text' width={48} height={40} animation='wave' />
+                    <Skeleton variant='text' width='75%' height={28} animation='wave' sx={{ mt: 1 }} />
+                    <Skeleton variant='text' width='60%' height={20} animation='wave' />
+                  </Box>
+                ))}
+              </div>
+            ) : loadError || !data ? (
+              <Typography color='text.secondary' variant='body2'>
+                Order breakdown is unavailable until the dashboard loads successfully.
+              </Typography>
+            ) : (
+              <div className='flex gap-4 flex-wrap'>
+                {Object.entries(data.ordersByStatus || {}).map(([status, count]) => (
+                  <div key={status} className='flex flex-col items-center p-4 border rounded'>
+                    <Typography variant='h5'>{count as number}</Typography>
+                    <Typography variant='body2' color='text.secondary'>
+                      {status}
+                    </Typography>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </Grid>
