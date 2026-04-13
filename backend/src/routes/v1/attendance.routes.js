@@ -9,7 +9,8 @@ const { validate, validateQuery } = require('../../middleware/validate');
 const {
   markAttendanceSchema,
   reportQuerySchema,
-  monthlySummaryQuerySchema
+  monthlySummaryQuerySchema,
+  adminMarkAbsentTodaySchema
 } = require('../../validators/attendance.validator');
 
 router.use(authenticate, companyScope);
@@ -19,6 +20,12 @@ router.post('/checkin', adminRepOrPermission('attendance.mark'), c.checkin);
 router.post('/checkout', adminRepOrPermission('attendance.mark'), c.checkout);
 router.get('/me/today', adminRepOrPermission('attendance.mark'), c.meToday);
 router.get('/today', adminRepOrPermission('attendance.view'), c.today);
+router.post(
+  '/admin/mark-absent-today',
+  adminRepOrPermission('attendance.view'),
+  validate(adminMarkAbsentTodaySchema),
+  c.adminMarkAbsentToday
+);
 router.get('/report', checkPermission('attendance.view'), validateQuery(reportQuerySchema), c.report);
 router.get(
   '/monthly-summary',

@@ -17,4 +17,13 @@ const monthlySummaryQuerySchema = Joi.object({
   month: Joi.string().pattern(/^\d{4}-\d{2}$/).required()
 });
 
-module.exports = { markAttendanceSchema, reportQuerySchema, monthlySummaryQuerySchema };
+const adminMarkAbsentTodaySchema = Joi.object({
+  employeeId: Joi.string().required()
+});
+
+module.exports = {
+  markAttendanceSchema,
+  reportQuerySchema,
+  monthlySummaryQuerySchema,
+  adminMarkAbsentTodaySchema
+};

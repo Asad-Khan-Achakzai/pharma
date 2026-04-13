@@ -54,4 +54,24 @@ const monthlySummary = asyncHandler(async (req, res) => {
   ApiResponse.success(res, data);
 });
 
-module.exports = { mark, checkin, checkout, meToday, today, report, monthlySummary };
+/** Only ADMIN — correct mistaken check-in for an employee (today, Pacific). */
+const adminMarkAbsentToday = asyncHandler(async (req, res) => {
+  if (req.user.role !== ROLES.ADMIN) {
+    throw new ApiError(403, 'Only administrators can mark employees absent');
+  }
+  const { employeeId } = req.body;
+  if (!employeeId) throw new ApiError(400, 'employeeId is required');
+  const doc = await attendanceService.adminMarkAbsentToday(req.companyId, employeeId);
+  ApiResponse.success(res, doc, 'Employee marked absent for today');
+});
+
+module.exports = {
+  mark,
+  checkin,
+  checkout,
+  meToday,
+  today,
+  report,
+  monthlySummary,
+  adminMarkAbsentToday
+};

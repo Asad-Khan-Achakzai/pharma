@@ -9,5 +9,7 @@ export const attendanceService = {
   report: (params: { employeeId: string; startDate: string; endDate: string }) =>
     api.get('/attendance/report', { params }),
   monthlySummary: (params: { employeeId: string; month: string }) =>
-    api.get('/attendance/monthly-summary', { params })
+    api.get('/attendance/monthly-summary', { params }),
+  /** Admin only: mark employee absent for today (Pacific); clears mistaken check-in. */
+  adminMarkAbsentToday: (body: { employeeId: string }) => api.post('/attendance/admin/mark-absent-today', body)
 }

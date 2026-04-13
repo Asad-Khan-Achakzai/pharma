@@ -16,7 +16,8 @@ const {
 
 const round2 = (n) => Math.round(n * 100) / 100;
 
-const CHECK_IN_FROM_MINUTES = 8 * 60;
+/** Earliest check-in on the Pacific business day (0 = any time that day). Previously 8:00 AM PT, which disabled the UI for most international users. */
+const CHECK_IN_FROM_MINUTES = 0;
 
 const findTodayRecord = async (companyId, employeeId) => {
   const ymd = pstTodayYmd();
@@ -398,6 +399,41 @@ const report = async (companyId, query) => {
   };
 };
 
+/**
+ * Admin-only: correct a mistaken check-in / wrong status for today (Pacific calendar day).
+ * Sets status ABSENT and clears check-in/out times; payroll counts the day as absent.
+ */
+const adminMarkAbsentToday = async (companyId, targetEmployeeId) => {
+  const ymd = pstTodayYmd();
+  const dateDoc = dateDocFromPstYmd(ymd);
+
+  const target = await User.findOne({
+    _id: targetEmployeeId,
+    companyId,
+    isDeleted: { $ne: true }
+  }).lean();
+  if (!target) throw new ApiError(404, 'Employee not found');
+
+  const doc = await Attendance.findOne({
+    companyId,
+    employeeId: targetEmployeeId,
+    date: dateDoc,
+    isDeleted: { $ne: true }
+  });
+  if (!doc) {
+    throw new ApiError(400, 'No attendance entry for this employee today');
+  }
+
+  doc.status = ATTENDANCE_STATUS.ABSENT;
+  doc.checkInTime = null;
+  doc.checkOutTime = null;
+  doc.markedBy = ATTENDANCE_MARKED_BY.ADMIN;
+  const stamp = `Marked absent by admin (${new Date().toISOString()})`;
+  doc.notes = doc.notes ? `${doc.notes}\n${stamp}` : stamp;
+  await doc.save();
+  return doc;
+};
+
 const monthlySummary = async (companyId, employeeId, monthStr, dailyAllowanceRate) => {
   const stats = await getMonthStatsForPayroll(companyId, employeeId, monthStr, new Date());
   const rate = Number(dailyAllowanceRate) || 0;
@@ -427,6 +463,7 @@ module.exports = {
   markSelf,
   getMeToday,
   listToday,
+  adminMarkAbsentToday,
   report,
   monthlySummary,
   runAutoCheckoutPst,

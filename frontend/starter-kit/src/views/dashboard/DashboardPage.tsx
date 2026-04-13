@@ -23,9 +23,9 @@ import CustomTextField from '@core/components/mui/TextField'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { reportsService } from '@/services/reports.service'
 import { attendanceService } from '@/services/attendance.service'
-import Link from 'next/link'
 import { useAuth } from '@/contexts/AuthContext'
-import { formatYyyyMmDd } from '@/utils/dateLocal'
+import ProfitCostDashboardCharts from '@/views/dashboard/ProfitCostDashboardCharts'
+import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
 
 const AppReactApexCharts = dynamic(() => import('@/libs/styles/AppReactApexCharts'), { ssr: false })
 
@@ -85,36 +85,51 @@ const DashboardPage = () => {
   const [loading, setLoading] = useState(true)
   const [todayBoard, setTodayBoard] = useState<TodayBoard | null>(null)
   const [meToday, setMeToday] = useState<any>(null)
+  const [meTodayLoading, setMeTodayLoading] = useState(false)
   const [checkingIn, setCheckingIn] = useState(false)
   const [checkingOut, setCheckingOut] = useState(false)
+  const [markAbsentConfirmOpen, setMarkAbsentConfirmOpen] = useState(false)
+  const [pendingAbsent, setPendingAbsent] = useState<{ employeeId: string; name: string } | null>(null)
+  const [markingAbsent, setMarkingAbsent] = useState(false)
   const [sortBy, setSortBy] = useState<'name' | 'status'>('name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [filterStatus, setFilterStatus] = useState<string>('')
-  const [plSnapshot, setPlSnapshot] = useState<any>(null)
-
   const textSecondary = 'var(--mui-palette-text-secondary)'
   const canViewReports = hasPermission('reports.view')
+  const isAdmin = user?.role === 'ADMIN'
 
   const loadAttendanceWidgets = useCallback(async () => {
     const canCompany =
       user?.role === 'ADMIN' || user?.role === 'MEDICAL_REP' || hasPermission('attendance.view')
     const canMine =
       user?.role === 'ADMIN' || user?.role === 'MEDICAL_REP' || hasPermission('attendance.mark')
-    try {
-      if (canCompany) {
+
+    if (canCompany) {
+      try {
         const r = await attendanceService.today()
         setTodayBoard(r.data.data as TodayBoard)
-      } else {
+      } catch (err) {
+        showApiError(err, 'Failed to load team attendance')
         setTodayBoard(null)
       }
-      if (canMine) {
+    } else {
+      setTodayBoard(null)
+    }
+
+    if (canMine) {
+      setMeTodayLoading(true)
+      try {
         const m = await attendanceService.meToday()
         setMeToday(m.data.data)
-      } else {
+      } catch (err) {
+        showApiError(err, 'Failed to load my attendance')
         setMeToday(null)
+      } finally {
+        setMeTodayLoading(false)
       }
-    } catch (err) {
-      showApiError(err, 'Failed to load attendance')
+    } else {
+      setMeToday(null)
+      setMeTodayLoading(false)
     }
   }, [hasPermission, user?.role])
 
@@ -137,16 +152,6 @@ const DashboardPage = () => {
   useEffect(() => {
     loadAttendanceWidgets()
   }, [loadAttendanceWidgets])
-
-  useEffect(() => {
-    if (!canViewReports) return
-    const end = new Date()
-    const start = new Date(end.getFullYear(), end.getMonth(), 1)
-    reportsService
-      .profitSummary({ startDate: formatYyyyMmDd(start), endDate: formatYyyyMmDd(end) })
-      .then(res => setPlSnapshot(res.data.data))
-      .catch(() => setPlSnapshot(null))
-  }, [canViewReports])
 
   const formatPstHm = (iso: string | undefined) => {
     if (!iso) return null
@@ -181,6 +186,33 @@ const DashboardPage = () => {
       showApiError(err, 'Could not check out')
     } finally {
       setCheckingOut(false)
+    }
+  }
+
+  const openMarkAbsentConfirm = (employeeId: string, name: string) => {
+    setPendingAbsent({ employeeId, name })
+    setMarkAbsentConfirmOpen(true)
+  }
+
+  const closeMarkAbsentConfirm = () => {
+    if (markingAbsent) return
+    setMarkAbsentConfirmOpen(false)
+    setPendingAbsent(null)
+  }
+
+  const handleConfirmMarkAbsent = async () => {
+    if (!pendingAbsent) return
+    setMarkingAbsent(true)
+    try {
+      await attendanceService.adminMarkAbsentToday({ employeeId: pendingAbsent.employeeId })
+      showSuccess('Employee marked absent for today')
+      setMarkAbsentConfirmOpen(false)
+      setPendingAbsent(null)
+      await loadAttendanceWidgets()
+    } catch (err) {
+      showApiError(err, 'Could not update attendance')
+    } finally {
+      setMarkingAbsent(false)
     }
   }
 
@@ -269,66 +301,102 @@ const DashboardPage = () => {
   ]
 
   return (
+    <>
     <Grid container spacing={6}>
-      {canViewReports && plSnapshot && (
-        <Grid size={{ xs: 12 }}>
-          <Card>
-            <CardHeader
-              title='Profit & cost (this month)'
-              subheader='Transaction-based revenue vs full cost stack. Open Reports → Profit & cost for filters and charts.'
-              action={
-                <Button component={Link} href='/reports' size='small' variant='tonal'>
-                  Reports
-                </Button>
-              }
-            />
-            <CardContent>
-              <Grid container spacing={4}>
-                <Grid size={{ xs: 6, sm: 3 }}>
-                  <Typography variant='caption' color='text.secondary'>
-                    Revenue
-                  </Typography>
-                  <Typography fontWeight={600}>{formatPKR(plSnapshot.totalRevenue)}</Typography>
-                </Grid>
-                <Grid size={{ xs: 6, sm: 3 }}>
-                  <Typography variant='caption' color='text.secondary'>
-                    Total cost
-                  </Typography>
-                  <Typography fontWeight={600}>{formatPKR(plSnapshot.totalCost)}</Typography>
-                </Grid>
-                <Grid size={{ xs: 6, sm: 3 }}>
-                  <Typography variant='caption' color='text.secondary'>
-                    Net profit
-                  </Typography>
-                  <Typography fontWeight={600} color={plSnapshot.netProfit >= 0 ? 'success.main' : 'error.main'}>
-                    {formatPKR(plSnapshot.netProfit)}
-                  </Typography>
-                </Grid>
-                <Grid size={{ xs: 6, sm: 3 }}>
-                  <Typography variant='caption' color='text.secondary'>
-                    Margin
-                  </Typography>
-                  <Typography fontWeight={600}>
-                    {plSnapshot.profitMarginPercent != null
-                      ? `${Number(plSnapshot.profitMarginPercent).toFixed(1)}%`
-                      : '—'}
-                  </Typography>
-                </Grid>
-              </Grid>
-            </CardContent>
-          </Card>
-        </Grid>
-      )}
-
       {(showCompanyAttendance || showMyAttendance) && (
         <Grid size={{ xs: 12 }}>
           <Grid container spacing={4}>
+            {showMyAttendance && (
+              <Grid size={{ xs: 12 }}>
+                <Card>
+                  <CardHeader title='My attendance today' />
+                  <CardContent className='flex flex-col gap-3 items-start'>
+                    <Typography component='div' variant='body2' className='flex items-center gap-2 flex-wrap'>
+                      <span>Status:</span>
+                      <Chip
+                        size='small'
+                        label={
+                          meToday?.uiStatus === 'CHECKED_OUT'
+                            ? 'Checked out'
+                            : meToday?.uiStatus === 'PRESENT'
+                              ? 'Present'
+                              : 'Not marked'
+                        }
+                        color={
+                          meToday?.uiStatus === 'CHECKED_OUT'
+                            ? 'default'
+                            : meToday?.uiStatus === 'PRESENT'
+                              ? 'success'
+                              : 'warning'
+                        }
+                        variant='tonal'
+                      />
+                    </Typography>
+                    {meToday?.checkInTime && (
+                      <Typography variant='body2' color='text.secondary'>
+                        Check-in (PT): {formatPstHm(meToday.checkInTime as string) ?? '—'}
+                      </Typography>
+                    )}
+                    {meToday?.checkOutTime && (
+                      <Typography variant='body2' color='text.secondary'>
+                        Check-out (PT): {formatPstHm(meToday.checkOutTime as string) ?? '—'}
+                      </Typography>
+                    )}
+                    {meToday?.pstDate && (
+                      <Typography variant='caption' color='text.disabled'>
+                        Business date (Pacific): {meToday.pstDate}
+                      </Typography>
+                    )}
+                    <div className='flex flex-wrap gap-2'>
+                      <Button
+                        variant='contained'
+                        size='small'
+                        onClick={handleCheckIn}
+                        disabled={
+                          meTodayLoading ||
+                          checkingIn ||
+                          checkingOut ||
+                          !meToday?.canCheckIn
+                        }
+                      >
+                        {checkingIn ? 'Checking in...' : 'Check In'}
+                      </Button>
+                      <Button
+                        variant='tonal'
+                        color='secondary'
+                        size='small'
+                        onClick={handleCheckOut}
+                        disabled={
+                          meTodayLoading ||
+                          checkingIn ||
+                          checkingOut ||
+                          !meToday?.canCheckOut
+                        }
+                      >
+                        {checkingOut ? 'Checking out...' : 'Check Out'}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </Grid>
+            )}
             {showCompanyAttendance && todayBoard?.summary && (
               <Grid size={{ xs: 12 }}>
                 <Card>
                   <CardHeader
                     title='Employees Working Today'
-                    subheader={`Total present: ${todayBoard.summary.present} · Staff tracked: ${todayBoard.summary.totalEmployees}`}
+                    subheader={
+                      <div>
+                        <Typography variant='body2' color='text.secondary' component='span' display='block'>
+                          {`Total present: ${todayBoard.summary.present} · Staff tracked: ${todayBoard.summary.totalEmployees}`}
+                        </Typography>
+                        {isAdmin && (
+                          <Typography variant='caption' color='text.secondary' display='block' className='mt-1'>
+                            As an admin, use <strong>Mark absent</strong> if someone checked in by mistake.
+                          </Typography>
+                        )}
+                      </div>
+                    }
                   />
                   <CardContent>
                     <Grid container spacing={4}>
@@ -380,12 +448,13 @@ const DashboardPage = () => {
                                 <TableCell>Status</TableCell>
                                 <TableCell align='right'>Check-in (PT)</TableCell>
                                 <TableCell align='right'>Check-out (PT)</TableCell>
+                                {isAdmin && <TableCell align='right'>Actions</TableCell>}
                               </TableRow>
                             </TableHead>
                             <TableBody>
                               {tableRows.length === 0 ? (
                                 <TableRow>
-                                  <TableCell colSpan={4} align='center'>
+                                  <TableCell colSpan={isAdmin ? 5 : 4} align='center'>
                                     <Typography color='text.secondary' variant='body2'>
                                       No rows match the current filters.
                                     </Typography>
@@ -415,6 +484,25 @@ const DashboardPage = () => {
                                     <TableCell align='right'>
                                       {row.checkOutTime ?? '—'}
                                     </TableCell>
+                                    {isAdmin && (
+                                      <TableCell align='right'>
+                                        {row.status === 'PRESENT' || row.status === 'HALF_DAY' ? (
+                                          <Button
+                                            size='small'
+                                            color='warning'
+                                            variant='tonal'
+                                            disabled={markingAbsent}
+                                            onClick={() => openMarkAbsentConfirm(row.employeeId, row.name)}
+                                          >
+                                            Mark absent
+                                          </Button>
+                                        ) : (
+                                          <Typography variant='caption' color='text.disabled'>
+                                            —
+                                          </Typography>
+                                        )}
+                                      </TableCell>
+                                    )}
                                   </TableRow>
                                 ))
                               )}
@@ -439,73 +527,11 @@ const DashboardPage = () => {
                 </Card>
               </Grid>
             )}
-            {showMyAttendance && (
-              <Grid size={{ xs: 12 }}>
-                <Card>
-                  <CardHeader title='My attendance today' />
-                  <CardContent className='flex flex-col gap-3 items-start'>
-                    <Typography component='div' variant='body2' className='flex items-center gap-2 flex-wrap'>
-                      <span>Status:</span>
-                      <Chip
-                        size='small'
-                        label={
-                          meToday?.uiStatus === 'CHECKED_OUT'
-                            ? 'Checked out'
-                            : meToday?.uiStatus === 'PRESENT'
-                              ? 'Present'
-                              : 'Not marked'
-                        }
-                        color={
-                          meToday?.uiStatus === 'CHECKED_OUT'
-                            ? 'default'
-                            : meToday?.uiStatus === 'PRESENT'
-                              ? 'success'
-                              : 'warning'
-                        }
-                        variant='tonal'
-                      />
-                    </Typography>
-                    {meToday?.checkInTime && (
-                      <Typography variant='body2' color='text.secondary'>
-                        Check-in (PT): {formatPstHm(meToday.checkInTime as string) ?? '—'}
-                      </Typography>
-                    )}
-                    {meToday?.checkOutTime && (
-                      <Typography variant='body2' color='text.secondary'>
-                        Check-out (PT): {formatPstHm(meToday.checkOutTime as string) ?? '—'}
-                      </Typography>
-                    )}
-                    {meToday?.pstDate && (
-                      <Typography variant='caption' color='text.disabled'>
-                        Business date (Pacific): {meToday.pstDate}
-                      </Typography>
-                    )}
-                    <div className='flex flex-wrap gap-2'>
-                      <Button
-                        variant='contained'
-                        size='small'
-                        onClick={handleCheckIn}
-                        disabled={checkingIn || checkingOut || !meToday?.canCheckIn}
-                      >
-                        {checkingIn ? 'Checking in...' : 'Check In'}
-                      </Button>
-                      <Button
-                        variant='tonal'
-                        color='secondary'
-                        size='small'
-                        onClick={handleCheckOut}
-                        disabled={checkingIn || checkingOut || !meToday?.canCheckOut}
-                      >
-                        {checkingOut ? 'Checking out...' : 'Check Out'}
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Grid>
-            )}
           </Grid>
         </Grid>
       )}
+
+      {canViewReports && <ProfitCostDashboardCharts />}
 
       {kpis.map((kpi, i) => (
         <Grid key={i} size={{ xs: 12, sm: 6, md: 4, lg: 2 }}>
@@ -535,6 +561,24 @@ const DashboardPage = () => {
         </Card>
       </Grid>
     </Grid>
+
+    <ConfirmDialog
+      open={markAbsentConfirmOpen}
+      onClose={closeMarkAbsentConfirm}
+      onConfirm={handleConfirmMarkAbsent}
+      title='Mark employee absent?'
+      description={
+        pendingAbsent
+          ? `Mark ${pendingAbsent.name} as absent for today? Their check-in will be removed if it was recorded by mistake.`
+          : ''
+      }
+      confirmText='Yes, mark absent'
+      cancelText='Cancel'
+      confirmColor='warning'
+      icon='tabler-user-x'
+      loading={markingAbsent}
+    />
+    </>
   )
 }
 
