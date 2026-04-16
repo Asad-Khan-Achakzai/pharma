@@ -26,6 +26,7 @@ import { reportsService } from '@/services/reports.service'
 import { attendanceService } from '@/services/attendance.service'
 import { useAuth } from '@/contexts/AuthContext'
 import ProfitCostDashboardCharts from '@/views/dashboard/ProfitCostDashboardCharts'
+import InventoryDashboardCharts from '@/views/dashboard/InventoryDashboardCharts'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
 
 const AppReactApexCharts = dynamic(() => import('@/libs/styles/AppReactApexCharts'), { ssr: false })
@@ -99,6 +100,7 @@ const DashboardPage = () => {
   const [filterStatus, setFilterStatus] = useState<string>('')
   const textSecondary = 'var(--mui-palette-text-secondary)'
   const canViewReports = hasPermission('reports.view')
+  const canViewInventory = hasPermission('inventory.view')
   const isAdmin = user?.role === 'ADMIN'
 
   const loadAttendanceWidgets = useCallback(async () => {
@@ -627,6 +629,8 @@ const DashboardPage = () => {
       )}
 
       {canViewReports && <ProfitCostDashboardCharts />}
+
+      {canViewInventory && <InventoryDashboardCharts />}
 
       {dashboardDataLoading
         ? Array.from({ length: 6 }).map((_, i) => (
