@@ -11,5 +11,8 @@ export const attendanceService = {
   monthlySummary: (params: { employeeId: string; month: string }) =>
     api.get('/attendance/monthly-summary', { params }),
   /** Admin only: mark employee absent for today (Pacific); clears mistaken check-in. */
-  adminMarkAbsentToday: (body: { employeeId: string }) => api.post('/attendance/admin/mark-absent-today', body)
+  adminMarkAbsentToday: (body: { employeeId: string }) => api.post('/attendance/admin/mark-absent-today', body),
+  /** Admin only: set today's status (Pacific) — present, absent, half-day, or leave. */
+  adminSetTodayStatus: (body: { employeeId: string; status: 'PRESENT' | 'ABSENT' | 'HALF_DAY' | 'LEAVE' }) =>
+    api.post('/attendance/admin/set-today-status', body)
 }

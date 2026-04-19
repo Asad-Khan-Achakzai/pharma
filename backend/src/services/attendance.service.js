@@ -400,10 +400,14 @@ const report = async (companyId, query) => {
 };
 
 /**
- * Admin-only: correct a mistaken check-in / wrong status for today (Pacific calendar day).
- * Sets status ABSENT and clears check-in/out times; payroll counts the day as absent.
+ * Admin-only: set today's attendance status for an employee (Pacific calendar day).
+ * Creates a row if none exists. PRESENT sets check-in time when missing; other statuses clear times.
  */
-const adminMarkAbsentToday = async (companyId, targetEmployeeId) => {
+const adminSetAttendanceToday = async (companyId, targetEmployeeId, status) => {
+  if (!Object.values(ATTENDANCE_STATUS).includes(status)) {
+    throw new ApiError(400, 'Invalid attendance status');
+  }
+
   const ymd = pstTodayYmd();
   const dateDoc = dateDocFromPstYmd(ymd);
 
@@ -414,24 +418,63 @@ const adminMarkAbsentToday = async (companyId, targetEmployeeId) => {
   }).lean();
   if (!target) throw new ApiError(404, 'Employee not found');
 
-  const doc = await Attendance.findOne({
+  let doc = await Attendance.findOne({
     companyId,
     employeeId: targetEmployeeId,
     date: dateDoc,
     isDeleted: { $ne: true }
   });
+
+  const stampLine = (verb) =>
+    `Admin ${verb} ${status} — ${new Date().toISOString()}`;
+
   if (!doc) {
-    throw new ApiError(400, 'No attendance entry for this employee today');
+    const base = {
+      companyId,
+      employeeId: targetEmployeeId,
+      date: dateDoc,
+      status,
+      markedBy: ATTENDANCE_MARKED_BY.ADMIN,
+      notes: stampLine('set')
+    };
+    if (status === ATTENDANCE_STATUS.PRESENT) {
+      base.checkInTime = new Date();
+      base.checkOutTime = null;
+    } else {
+      base.checkInTime = null;
+      base.checkOutTime = null;
+    }
+    doc = await Attendance.create(base);
+    return doc;
   }
 
-  doc.status = ATTENDANCE_STATUS.ABSENT;
-  doc.checkInTime = null;
-  doc.checkOutTime = null;
+  doc.status = status;
   doc.markedBy = ATTENDANCE_MARKED_BY.ADMIN;
-  const stamp = `Marked absent by admin (${new Date().toISOString()})`;
-  doc.notes = doc.notes ? `${doc.notes}\n${stamp}` : stamp;
+
+  switch (status) {
+    case ATTENDANCE_STATUS.PRESENT:
+      if (!doc.checkInTime) doc.checkInTime = new Date();
+      doc.checkOutTime = null;
+      break;
+    case ATTENDANCE_STATUS.ABSENT:
+    case ATTENDANCE_STATUS.HALF_DAY:
+    case ATTENDANCE_STATUS.LEAVE:
+      doc.checkInTime = null;
+      doc.checkOutTime = null;
+      break;
+    default:
+      break;
+  }
+
+  const line = stampLine('updated');
+  doc.notes = doc.notes ? `${doc.notes}\n${line}` : line;
   await doc.save();
   return doc;
+};
+
+/** @deprecated use adminSetAttendanceToday(..., ABSENT) — kept for existing clients */
+const adminMarkAbsentToday = async (companyId, targetEmployeeId) => {
+  return adminSetAttendanceToday(companyId, targetEmployeeId, ATTENDANCE_STATUS.ABSENT);
 };
 
 const monthlySummary = async (companyId, employeeId, monthStr, dailyAllowanceRate) => {
@@ -463,6 +506,7 @@ module.exports = {
   markSelf,
   getMeToday,
   listToday,
+  adminSetAttendanceToday,
   adminMarkAbsentToday,
   report,
   monthlySummary,

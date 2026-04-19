@@ -65,6 +65,16 @@ const adminMarkAbsentToday = asyncHandler(async (req, res) => {
   ApiResponse.success(res, doc, 'Employee marked absent for today');
 });
 
+/** Only ADMIN / SUPER_ADMIN — set present / absent / half-day / leave for today (Pacific). */
+const adminSetTodayStatus = asyncHandler(async (req, res) => {
+  if (req.user.role !== ROLES.ADMIN && req.user.role !== ROLES.SUPER_ADMIN) {
+    throw new ApiError(403, 'Only administrators can set employee attendance');
+  }
+  const { employeeId, status } = req.body;
+  const doc = await attendanceService.adminSetAttendanceToday(req.companyId, employeeId, status);
+  ApiResponse.success(res, doc, 'Attendance updated');
+});
+
 module.exports = {
   mark,
   checkin,
@@ -73,5 +83,6 @@ module.exports = {
   today,
   report,
   monthlySummary,
-  adminMarkAbsentToday
+  adminMarkAbsentToday,
+  adminSetTodayStatus
 };

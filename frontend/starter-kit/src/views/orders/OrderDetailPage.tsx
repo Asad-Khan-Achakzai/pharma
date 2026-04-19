@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect, use } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
 import CardContent from '@mui/material/CardContent'
@@ -14,6 +16,7 @@ import DialogTitle from '@mui/material/DialogTitle'
 import DialogContent from '@mui/material/DialogContent'
 import DialogActions from '@mui/material/DialogActions'
 import CircularProgress from '@mui/material/CircularProgress'
+import IconButton from '@mui/material/IconButton'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
 import CustomTextField from '@core/components/mui/TextField'
@@ -24,6 +27,7 @@ const statusColors: Record<string, 'success' | 'warning' | 'info' | 'error' | 'd
 }
 
 const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: string }> }) => {
+  const router = useRouter()
   const params = use(paramsPromise)
   const [order, setOrder] = useState<any>(null)
   const [deliverOpen, setDeliverOpen] = useState(false)
@@ -36,6 +40,7 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
   const { hasPermission } = useAuth()
   const hasDeliverPerm = hasPermission('orders.deliver')
   const hasReturnPerm = hasPermission('orders.return')
+  const hasEditPerm = hasPermission('orders.edit')
 
   const fetchOrder = async () => {
     try {
@@ -84,22 +89,56 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
     finally { setReturning(false) }
   }
 
-  if (loadError) return <Card><CardContent><Typography color='error'>Failed to load order. It may not exist or you may not have access.</Typography></CardContent></Card>
+  if (loadError) {
+    return (
+      <Card>
+        <CardContent className='flex flex-col gap-4'>
+          <Button variant='text' startIcon={<i className='tabler-arrow-left' />} onClick={() => router.push('/orders/list')}>
+            Back to orders
+          </Button>
+          <Typography color='error'>Failed to load order. It may not exist or you may not have access.</Typography>
+        </CardContent>
+      </Card>
+    )
+  }
   if (!order) return <Card><CardContent className='flex justify-center items-center min-bs-[200px]'><CircularProgress /></CardContent></Card>
 
   const canDeliver = hasDeliverPerm && ['PENDING', 'PARTIALLY_DELIVERED'].includes(order.status)
   const canReturn = hasReturnPerm && ['DELIVERED', 'PARTIALLY_DELIVERED', 'PARTIALLY_RETURNED'].includes(order.status)
+  const canEditPending = hasEditPerm && order.status === 'PENDING'
 
   return (
     <Grid container spacing={6}>
       <Grid size={{ xs: 12, md: 8 }}>
         <Card>
-          <CardHeader title={`Order ${order.orderNumber}`} action={
-            <div className='flex gap-2'>
-              {canDeliver && <Button variant='contained' color='success' onClick={openDeliver}>Deliver</Button>}
-              {canReturn && <Button variant='outlined' color='error' onClick={openReturn}>Return</Button>}
-            </div>
-          } />
+          <CardHeader
+            title={
+              <div className='flex items-center gap-1'>
+                <IconButton
+                  aria-label='Back to orders list'
+                  onClick={() => router.push('/orders/list')}
+                  size='small'
+                  className='-mis-1'
+                >
+                  <i className='tabler-arrow-left' />
+                </IconButton>
+                <Typography component='span' variant='h5'>
+                  Order {order.orderNumber}
+                </Typography>
+              </div>
+            }
+            action={
+              <div className='flex flex-wrap gap-2'>
+                {canEditPending && (
+                  <Button component={Link} href={`/orders/${params.id}/edit`} variant='outlined'>
+                    Edit order
+                  </Button>
+                )}
+                {canDeliver && <Button variant='contained' color='success' onClick={openDeliver}>Deliver</Button>}
+                {canReturn && <Button variant='outlined' color='error' onClick={openReturn}>Return</Button>}
+              </div>
+            }
+          />
           <CardContent>
             <div className='flex gap-4 mbe-4'>
               <Chip label={order.status} color={statusColors[order.status] || 'default'} />

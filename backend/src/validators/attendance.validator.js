@@ -21,9 +21,17 @@ const adminMarkAbsentTodaySchema = Joi.object({
   employeeId: Joi.string().required()
 });
 
+const ATTENDANCE_STATUSES = ['PRESENT', 'ABSENT', 'HALF_DAY', 'LEAVE'];
+
+const adminSetTodayStatusSchema = Joi.object({
+  employeeId: Joi.string().required(),
+  status: Joi.string().valid(...ATTENDANCE_STATUSES).required()
+});
+
 module.exports = {
   markAttendanceSchema,
   reportQuerySchema,
   monthlySummaryQuerySchema,
-  adminMarkAbsentTodaySchema
+  adminMarkAbsentTodaySchema,
+  adminSetTodayStatusSchema
 };

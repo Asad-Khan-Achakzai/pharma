@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, type MouseEvent } from 'react'
 import dynamic from 'next/dynamic'
 import Box from '@mui/material/Box'
 import Grid from '@mui/material/Grid'
@@ -18,6 +18,7 @@ import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import Paper from '@mui/material/Paper'
 import Skeleton from '@mui/material/Skeleton'
+import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import type { ApexOptions } from 'apexcharts'
 import CustomTextField from '@core/components/mui/TextField'
@@ -95,7 +96,9 @@ const DashboardPage = () => {
   const [checkingOut, setCheckingOut] = useState(false)
   const [markAbsentConfirmOpen, setMarkAbsentConfirmOpen] = useState(false)
   const [pendingAbsent, setPendingAbsent] = useState<{ employeeId: string; name: string } | null>(null)
-  const [markingAbsent, setMarkingAbsent] = useState(false)
+  const [adminAttendanceBusy, setAdminAttendanceBusy] = useState(false)
+  const [statusMenuAnchor, setStatusMenuAnchor] = useState<null | HTMLElement>(null)
+  const [statusMenuEmployee, setStatusMenuEmployee] = useState<{ employeeId: string; name: string } | null>(null)
   const [sortBy, setSortBy] = useState<'name' | 'status'>('name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [filterStatus, setFilterStatus] = useState<string>('')
@@ -208,16 +211,47 @@ const DashboardPage = () => {
   }
 
   const closeMarkAbsentConfirm = () => {
-    if (markingAbsent) return
+    if (adminAttendanceBusy) return
     setMarkAbsentConfirmOpen(false)
     setPendingAbsent(null)
   }
 
+  const openStatusMenu = (e: MouseEvent<HTMLElement>, row: TodayEmployee) => {
+    setStatusMenuAnchor(e.currentTarget)
+    setStatusMenuEmployee({ employeeId: row.employeeId, name: row.name })
+  }
+
+  const closeStatusMenu = () => {
+    setStatusMenuAnchor(null)
+    setStatusMenuEmployee(null)
+  }
+
+  const applyAdminStatusFromMenu = async (status: 'PRESENT' | 'HALF_DAY' | 'LEAVE' | 'ABSENT') => {
+    if (!statusMenuEmployee) return
+    const { employeeId, name } = statusMenuEmployee
+    if (status === 'ABSENT') {
+      closeStatusMenu()
+      openMarkAbsentConfirm(employeeId, name)
+      return
+    }
+    setAdminAttendanceBusy(true)
+    try {
+      await attendanceService.adminSetTodayStatus({ employeeId, status })
+      showSuccess('Attendance updated')
+      closeStatusMenu()
+      await loadAttendanceWidgets()
+    } catch (err) {
+      showApiError(err, 'Could not update attendance')
+    } finally {
+      setAdminAttendanceBusy(false)
+    }
+  }
+
   const handleConfirmMarkAbsent = async () => {
     if (!pendingAbsent) return
-    setMarkingAbsent(true)
+    setAdminAttendanceBusy(true)
     try {
-      await attendanceService.adminMarkAbsentToday({ employeeId: pendingAbsent.employeeId })
+      await attendanceService.adminSetTodayStatus({ employeeId: pendingAbsent.employeeId, status: 'ABSENT' })
       showSuccess('Employee marked absent for today')
       setMarkAbsentConfirmOpen(false)
       setPendingAbsent(null)
@@ -225,7 +259,7 @@ const DashboardPage = () => {
     } catch (err) {
       showApiError(err, 'Could not update attendance')
     } finally {
-      setMarkingAbsent(false)
+      setAdminAttendanceBusy(false)
     }
   }
 
@@ -433,7 +467,7 @@ const DashboardPage = () => {
                           </Typography>
                           {isAdmin && (
                             <Typography variant='caption' color='text.secondary' display='block' className='mt-1'>
-                              As an admin, use <strong>Mark absent</strong> if someone checked in by mistake.
+                              As an admin, use <strong>Set status</strong> to mark present, half-day, leave, or absent.
                             </Typography>
                           )}
                         </div>
@@ -477,7 +511,7 @@ const DashboardPage = () => {
                                     </TableCell>
                                     {isAdmin && (
                                       <TableCell align='right'>
-                                        <Skeleton variant='rounded' width={88} height={28} sx={{ ml: 'auto' }} animation='wave' />
+                                        <Skeleton variant='rounded' width={120} height={32} sx={{ ml: 'auto' }} animation='wave' />
                                       </TableCell>
                                     )}
                                   </TableRow>
@@ -579,21 +613,15 @@ const DashboardPage = () => {
                                     </TableCell>
                                     {isAdmin && (
                                       <TableCell align='right'>
-                                        {row.status === 'PRESENT' || row.status === 'HALF_DAY' ? (
-                                          <Button
-                                            size='small'
-                                            color='warning'
-                                            variant='tonal'
-                                            disabled={markingAbsent}
-                                            onClick={() => openMarkAbsentConfirm(row.employeeId, row.name)}
-                                          >
-                                            Mark absent
-                                          </Button>
-                                        ) : (
-                                          <Typography variant='caption' color='text.disabled'>
-                                            —
-                                          </Typography>
-                                        )}
+                                        <Button
+                                          size='small'
+                                          variant='outlined'
+                                          disabled={adminAttendanceBusy}
+                                          onClick={e => openStatusMenu(e, row)}
+                                          endIcon={<i className='tabler-chevron-down text-base' />}
+                                        >
+                                          Set status
+                                        </Button>
                                       </TableCell>
                                     )}
                                   </TableRow>
@@ -718,6 +746,41 @@ const DashboardPage = () => {
       </Grid>
     </Grid>
 
+    <Menu
+      anchorEl={statusMenuAnchor}
+      open={Boolean(statusMenuAnchor)}
+      onClose={closeStatusMenu}
+      anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+      slotProps={{ paper: { sx: { minWidth: 200 } } }}
+    >
+      <MenuItem
+        disabled={adminAttendanceBusy}
+        onClick={() => applyAdminStatusFromMenu('PRESENT')}
+      >
+        Mark present
+      </MenuItem>
+      <MenuItem
+        disabled={adminAttendanceBusy}
+        onClick={() => applyAdminStatusFromMenu('HALF_DAY')}
+      >
+        Half-day
+      </MenuItem>
+      <MenuItem
+        disabled={adminAttendanceBusy}
+        onClick={() => applyAdminStatusFromMenu('LEAVE')}
+      >
+        Leave
+      </MenuItem>
+      <MenuItem
+        disabled={adminAttendanceBusy}
+        onClick={() => applyAdminStatusFromMenu('ABSENT')}
+        sx={{ color: 'warning.main' }}
+      >
+        Mark absent…
+      </MenuItem>
+    </Menu>
+
     <ConfirmDialog
       open={markAbsentConfirmOpen}
       onClose={closeMarkAbsentConfirm}
@@ -732,7 +795,7 @@ const DashboardPage = () => {
       cancelText='Cancel'
       confirmColor='warning'
       icon='tabler-user-x'
-      loading={markingAbsent}
+      loading={adminAttendanceBusy}
     />
     </>
   )

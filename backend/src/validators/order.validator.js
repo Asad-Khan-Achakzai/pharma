@@ -16,6 +16,9 @@ const createOrderSchema = Joi.object({
 });
 
 const updateOrderSchema = Joi.object({
+  pharmacyId: Joi.string(),
+  doctorId: Joi.string().allow(null, ''),
+  distributorId: Joi.string(),
   items: Joi.array().items(
     Joi.object({
       productId: Joi.string().required(),

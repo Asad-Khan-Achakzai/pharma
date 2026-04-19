@@ -115,6 +115,20 @@ const update = async (companyId, id, data, reqUser) => {
   if (order.status !== ORDER_STATUS.PENDING) throw new ApiError(400, 'Only pending orders can be edited');
 
   const before = order.toObject();
+
+  if (data.pharmacyId !== undefined) {
+    const pharmacy = await Pharmacy.findOne({ _id: data.pharmacyId, companyId, isActive: true });
+    if (!pharmacy) throw new ApiError(404, 'Pharmacy not found');
+    order.pharmacyId = data.pharmacyId;
+  }
+  if (data.distributorId !== undefined) {
+    const distributor = await Distributor.findOne({ _id: data.distributorId, companyId, isActive: true });
+    if (!distributor) throw new ApiError(404, 'Distributor not found');
+    order.distributorId = data.distributorId;
+  }
+  if (data.doctorId !== undefined) {
+    order.doctorId = data.doctorId && String(data.doctorId).trim() ? data.doctorId : null;
+  }
   if (data.notes !== undefined) order.notes = data.notes;
   if (data.items) {
     const [pharmacy, distributor] = await Promise.all([
@@ -130,8 +144,13 @@ const update = async (companyId, id, data, reqUser) => {
       const product = productMap[item.productId];
       if (!product) throw new ApiError(400, `Product ${item.productId} not found`);
       return {
-        productId: item.productId, productName: product.name, quantity: item.quantity,
-        tpAtTime: product.tp, castingAtTime: product.casting,
+        productId: item.productId,
+        productName: product.name,
+        quantity: item.quantity,
+        deliveredQty: 0,
+        returnedQty: 0,
+        tpAtTime: product.tp,
+        castingAtTime: product.casting,
         distributorDiscount: item.distributorDiscount ?? distributor?.discountOnTP ?? 0,
         clinicDiscount: item.clinicDiscount ?? pharmacy?.discountOnTP ?? 0
       };

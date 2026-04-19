@@ -89,21 +89,59 @@ const getByDistributor = async (companyId, distributorId) => {
   return inventory;
 };
 
-const transfer = async (companyId, data, reqUser) => {
-  const { distributorId, items, totalShippingCost, notes } = data;
-
-  const distributor = await Distributor.findOne({ _id: distributorId, companyId, isActive: true });
-  if (!distributor) throw new ApiError(404, 'Distributor not found');
-
+const loadProductsForTransfer = async (companyId, items) => {
   const productIds = items.map((i) => i.productId);
   const products = await Product.find({ _id: { $in: productIds }, companyId, isActive: true });
   if (products.length !== productIds.length) {
     throw new ApiError(400, 'One or more products not found');
   }
-
   const productMap = {};
   products.forEach((p) => { productMap[p._id.toString()] = p; });
+  return productMap;
+};
 
+const mergeIntoDestination = async ({
+  session,
+  companyId,
+  distributorId,
+  productId,
+  quantity,
+  newCostPerUnit,
+  reqUser
+}) => {
+  let inv = await DistributorInventory.findOne(
+    { companyId, distributorId, productId }
+  ).session(session);
+
+  if (inv && inv.quantity > 0) {
+    const totalExistingValue = inv.quantity * inv.avgCostPerUnit;
+    const totalNewValue = quantity * newCostPerUnit;
+    inv.avgCostPerUnit = roundPKR((totalExistingValue + totalNewValue) / (inv.quantity + quantity));
+    inv.quantity += quantity;
+  } else if (inv) {
+    inv.quantity += quantity;
+    inv.avgCostPerUnit = newCostPerUnit;
+  } else {
+    inv = new DistributorInventory({
+      companyId,
+      distributorId,
+      productId,
+      quantity,
+      avgCostPerUnit: newCostPerUnit,
+      createdBy: reqUser.userId
+    });
+  }
+
+  inv.lastUpdated = new Date();
+  inv.updatedBy = reqUser.userId;
+  await inv.save({ session });
+};
+
+const transferFromCompany = async (companyId, distributorId, items, totalShippingCost, notes, reqUser) => {
+  const distributor = await Distributor.findOne({ _id: distributorId, companyId, isActive: true });
+  if (!distributor) throw new ApiError(404, 'Distributor not found');
+
+  const productMap = await loadProductsForTransfer(companyId, items);
   const totalUnits = items.reduce((sum, i) => sum + i.quantity, 0);
   const shippingPerUnit = totalUnits > 0 ? roundPKR((totalShippingCost || 0) / totalUnits) : 0;
 
@@ -119,29 +157,15 @@ const transfer = async (companyId, data, reqUser) => {
       const shippingCostPerUnit = shippingPerUnit;
       const newCostPerUnit = roundPKR(castingAtTime + shippingCostPerUnit);
 
-      let inv = await DistributorInventory.findOne(
-        { companyId, distributorId, productId: item.productId }
-      ).session(session);
-
-      if (inv && inv.quantity > 0) {
-        const totalExistingValue = inv.quantity * inv.avgCostPerUnit;
-        const totalNewValue = item.quantity * newCostPerUnit;
-        inv.avgCostPerUnit = roundPKR((totalExistingValue + totalNewValue) / (inv.quantity + item.quantity));
-        inv.quantity += item.quantity;
-      } else if (inv) {
-        inv.quantity += item.quantity;
-        inv.avgCostPerUnit = newCostPerUnit;
-      } else {
-        inv = new DistributorInventory({
-          companyId, distributorId, productId: item.productId,
-          quantity: item.quantity, avgCostPerUnit: newCostPerUnit,
-          createdBy: reqUser.userId
-        });
-      }
-
-      inv.lastUpdated = new Date();
-      inv.updatedBy = reqUser.userId;
-      await inv.save({ session });
+      await mergeIntoDestination({
+        session,
+        companyId,
+        distributorId,
+        productId: item.productId,
+        quantity: item.quantity,
+        newCostPerUnit,
+        reqUser
+      });
 
       transferItems.push({
         productId: item.productId,
@@ -152,13 +176,28 @@ const transfer = async (companyId, data, reqUser) => {
     }
 
     const stockTransfer = await StockTransfer.create(
-      [{ companyId, distributorId, items: transferItems, totalShippingCost: totalShippingCost || 0, notes, createdBy: reqUser.userId }],
+      [{
+        companyId,
+        fromDistributorId: null,
+        distributorId,
+        items: transferItems,
+        totalShippingCost: totalShippingCost || 0,
+        notes,
+        createdBy: reqUser.userId
+      }],
       { session }
     );
 
     await session.commitTransaction();
 
-    await auditService.log({ companyId, userId: reqUser.userId, action: 'inventory.transfer', entityType: 'StockTransfer', entityId: stockTransfer[0]._id, changes: { after: stockTransfer[0].toObject() } });
+    await auditService.log({
+      companyId,
+      userId: reqUser.userId,
+      action: 'inventory.transfer',
+      entityType: 'StockTransfer',
+      entityId: stockTransfer[0]._id,
+      changes: { after: stockTransfer[0].toObject() }
+    });
 
     return stockTransfer[0];
   } catch (error) {
@@ -169,6 +208,132 @@ const transfer = async (companyId, data, reqUser) => {
   }
 };
 
+const transferBetweenDistributors = async (
+  companyId,
+  fromDistributorId,
+  toDistributorId,
+  items,
+  totalShippingCost,
+  notes,
+  reqUser
+) => {
+  if (String(fromDistributorId) === String(toDistributorId)) {
+    throw new ApiError(400, 'Source and destination distributors must differ');
+  }
+
+  const [fromDist, toDist] = await Promise.all([
+    Distributor.findOne({ _id: fromDistributorId, companyId, isActive: true }),
+    Distributor.findOne({ _id: toDistributorId, companyId, isActive: true })
+  ]);
+  if (!fromDist) throw new ApiError(404, 'Source distributor not found');
+  if (!toDist) throw new ApiError(404, 'Destination distributor not found');
+
+  const productMap = await loadProductsForTransfer(companyId, items);
+  const totalUnits = items.reduce((sum, i) => sum + i.quantity, 0);
+  const shippingPerUnit = totalUnits > 0 ? roundPKR((totalShippingCost || 0) / totalUnits) : 0;
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const transferItems = [];
+
+    for (const item of items) {
+      const product = productMap[item.productId];
+      const srcInv = await DistributorInventory.findOne({
+        companyId,
+        distributorId: fromDistributorId,
+        productId: item.productId
+      }).session(session);
+
+      if (!srcInv || srcInv.quantity < item.quantity) {
+        throw new ApiError(400, `Insufficient stock for ${product.name} at the source distributor`);
+      }
+
+      const sourceAvgBefore = srcInv.avgCostPerUnit;
+      srcInv.quantity -= item.quantity;
+      if (srcInv.quantity <= 0) {
+        srcInv.quantity = 0;
+        srcInv.avgCostPerUnit = 0;
+      }
+      srcInv.lastUpdated = new Date();
+      srcInv.updatedBy = reqUser.userId;
+      await srcInv.save({ session });
+
+      const shippingCostPerUnit = shippingPerUnit;
+      const newCostPerUnit = roundPKR(sourceAvgBefore + shippingCostPerUnit);
+
+      await mergeIntoDestination({
+        session,
+        companyId,
+        distributorId: toDistributorId,
+        productId: item.productId,
+        quantity: item.quantity,
+        newCostPerUnit,
+        reqUser
+      });
+
+      transferItems.push({
+        productId: item.productId,
+        quantity: item.quantity,
+        castingAtTime: sourceAvgBefore,
+        shippingCostPerUnit
+      });
+    }
+
+    const stockTransfer = await StockTransfer.create(
+      [{
+        companyId,
+        fromDistributorId,
+        distributorId: toDistributorId,
+        items: transferItems,
+        totalShippingCost: totalShippingCost || 0,
+        notes,
+        createdBy: reqUser.userId
+      }],
+      { session }
+    );
+
+    await session.commitTransaction();
+
+    await auditService.log({
+      companyId,
+      userId: reqUser.userId,
+      action: 'inventory.transfer',
+      entityType: 'StockTransfer',
+      entityId: stockTransfer[0]._id,
+      changes: { after: stockTransfer[0].toObject() }
+    });
+
+    return stockTransfer[0];
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
+  }
+};
+
+const transfer = async (companyId, data, reqUser) => {
+  const { distributorId, items, totalShippingCost, notes } = data;
+  const fromRaw = data.fromDistributorId;
+  const fromId = fromRaw && String(fromRaw).trim() ? fromRaw : null;
+
+  if (fromId) {
+    return transferBetweenDistributors(
+      companyId,
+      fromId,
+      distributorId,
+      items,
+      totalShippingCost,
+      notes,
+      reqUser
+    );
+  }
+
+  return transferFromCompany(companyId, distributorId, items, totalShippingCost, notes, reqUser);
+};
+
 const getTransfers = async (companyId, query) => {
   const { page, limit, skip, sort } = parsePagination(query);
   const filter = { companyId };
@@ -176,6 +341,7 @@ const getTransfers = async (companyId, query) => {
 
   const [docs, total] = await Promise.all([
     StockTransfer.find(filter)
+      .populate('fromDistributorId', 'name')
       .populate('distributorId', 'name')
       .populate('items.productId', 'name')
       .populate('createdBy', 'name')

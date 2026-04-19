@@ -32,6 +32,7 @@ const OrderListPage = () => {
   const router = useRouter()
   const { hasPermission } = useAuth()
   const canCreate = hasPermission('orders.create')
+  const canEdit = hasPermission('orders.edit')
   const [data, setData] = useState<Order[]>([])
   const [globalFilter, setGlobalFilter] = useState('')
   const [loading, setLoading] = useState(true)
@@ -47,12 +48,52 @@ const OrderListPage = () => {
   }, [])
 
   const columns = useMemo<ColumnDef<Order, any>[]>(() => [
-    columnHelper.accessor('orderNumber', { header: 'Order #', cell: ({ row }) => <Typography fontWeight={500} color='primary' className='cursor-pointer' onClick={() => router.push(`/orders/${row.original._id}`)}>{row.original.orderNumber}</Typography> }),
+    columnHelper.accessor(
+      (r) => {
+        const name = typeof r.pharmacyId === 'object' && r.pharmacyId?.name ? String(r.pharmacyId.name) : ''
+        return `${name} ${r.orderNumber}`.trim()
+      },
+      {
+        id: 'pharmacy',
+        header: 'Pharmacy',
+        cell: ({ row }) => {
+          const name =
+            typeof row.original.pharmacyId === 'object' && row.original.pharmacyId?.name
+              ? row.original.pharmacyId.name
+              : null
+          return (
+            <Typography
+              fontWeight={500}
+              color='primary'
+              className='cursor-pointer'
+              onClick={() => router.push(`/orders/${row.original._id}`)}
+            >
+              {name ?? '—'}
+            </Typography>
+          )
+        }
+      }
+    ),
     columnHelper.accessor('status', { header: 'Status', cell: ({ row }) => <Chip label={row.original.status} color={statusColors[row.original.status] || 'default'} size='small' variant='tonal' /> }),
     columnHelper.accessor('totalOrderedAmount', { header: 'Amount', cell: ({ row }) => `₨ ${row.original.totalOrderedAmount?.toFixed(2)}` }),
     columnHelper.display({ id: 'date', header: 'Date', cell: ({ row }) => new Date(row.original.createdAt).toLocaleDateString() }),
-    columnHelper.display({ id: 'actions', header: 'Actions', cell: ({ row }) => <IconButton size='small' onClick={() => router.push(`/orders/${row.original._id}`)}><i className='tabler-eye text-textSecondary' /></IconButton> })
-  ], [router])
+    columnHelper.display({
+      id: 'actions',
+      header: 'Actions',
+      cell: ({ row }) => (
+        <div className='flex items-center'>
+          {canEdit && row.original.status === 'PENDING' && (
+            <IconButton size='small' aria-label='Edit order' onClick={() => router.push(`/orders/${row.original._id}/edit`)}>
+              <i className='tabler-edit text-textSecondary' />
+            </IconButton>
+          )}
+          <IconButton size='small' aria-label='View order' onClick={() => router.push(`/orders/${row.original._id}`)}>
+            <i className='tabler-eye text-textSecondary' />
+          </IconButton>
+        </div>
+      )
+    })
+  ], [router, canEdit])
 
   const table = useReactTable({
     data, columns, filterFns: { fuzzy: fuzzyFilter }, state: { globalFilter }, globalFilterFn: fuzzyFilter, onGlobalFilterChange: setGlobalFilter,

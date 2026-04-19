@@ -10,7 +10,8 @@ const {
   markAttendanceSchema,
   reportQuerySchema,
   monthlySummaryQuerySchema,
-  adminMarkAbsentTodaySchema
+  adminMarkAbsentTodaySchema,
+  adminSetTodayStatusSchema
 } = require('../../validators/attendance.validator');
 
 router.use(authenticate, companyScope);
@@ -25,6 +26,12 @@ router.post(
   adminRepOrPermission('attendance.view'),
   validate(adminMarkAbsentTodaySchema),
   c.adminMarkAbsentToday
+);
+router.post(
+  '/admin/set-today-status',
+  adminRepOrPermission('attendance.view'),
+  validate(adminSetTodayStatusSchema),
+  c.adminSetTodayStatus
 );
 router.get('/report', checkPermission('attendance.view'), validateQuery(reportQuerySchema), c.report);
 router.get(

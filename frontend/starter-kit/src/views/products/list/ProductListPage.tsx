@@ -39,9 +39,7 @@ type Product = {
   composition: string
   mrp: number
   tp: number
-  tpPercent: number
   casting: number
-  castingPercent: number
   isActive: boolean
 }
 
@@ -58,7 +56,7 @@ const ProductListPage = () => {
   const [globalFilter, setGlobalFilter] = useState('')
   const [open, setOpen] = useState(false)
   const [editItem, setEditItem] = useState<Product | null>(null)
-  const [form, setForm] = useState({ name: '', composition: '', mrp: 0, tp: 0, tpPercent: 0, casting: 0, castingPercent: 0 })
+  const [form, setForm] = useState({ name: '', composition: '', mrp: 0, tp: 0, casting: 0 })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -87,10 +85,10 @@ const ProductListPage = () => {
   const handleOpen = (item?: Product) => {
     if (item) {
       setEditItem(item)
-      setForm({ name: item.name, composition: item.composition || '', mrp: item.mrp, tp: item.tp, tpPercent: item.tpPercent || 0, casting: item.casting, castingPercent: item.castingPercent || 0 })
+      setForm({ name: item.name, composition: item.composition || '', mrp: item.mrp, tp: item.tp, casting: item.casting })
     } else {
       setEditItem(null)
-      setForm({ name: '', composition: '', mrp: 0, tp: 0, tpPercent: 0, casting: 0, castingPercent: 0 })
+      setForm({ name: '', composition: '', mrp: 0, tp: 0, casting: 0 })
     }
     setOpen(true)
   }
@@ -202,9 +200,7 @@ const ProductListPage = () => {
             <Grid size={{ xs: 12 }}><CustomTextField fullWidth label='Composition' value={form.composition} onChange={e => setForm(p => ({ ...p, composition: e.target.value }))} /></Grid>
             <Grid size={{ xs: 6 }}><CustomTextField required fullWidth label='MRP' type='number' value={form.mrp} onChange={e => setForm(p => ({ ...p, mrp: +e.target.value }))} /></Grid>
             <Grid size={{ xs: 6 }}><CustomTextField required fullWidth label='TP' type='number' value={form.tp} onChange={e => setForm(p => ({ ...p, tp: +e.target.value }))} /></Grid>
-            <Grid size={{ xs: 6 }}><CustomTextField fullWidth label='TP %' type='number' value={form.tpPercent} onChange={e => setForm(p => ({ ...p, tpPercent: +e.target.value }))} /></Grid>
-            <Grid size={{ xs: 6 }}><CustomTextField required fullWidth label='Casting' type='number' value={form.casting} onChange={e => setForm(p => ({ ...p, casting: +e.target.value }))} /></Grid>
-            <Grid size={{ xs: 6 }}><CustomTextField fullWidth label='Casting %' type='number' value={form.castingPercent} onChange={e => setForm(p => ({ ...p, castingPercent: +e.target.value }))} /></Grid>
+            <Grid size={{ xs: 12 }}><CustomTextField required fullWidth label='Casting' type='number' value={form.casting} onChange={e => setForm(p => ({ ...p, casting: +e.target.value }))} /></Grid>
           </Grid>
         </DialogContent>
         <DialogActions>
@@ -222,9 +218,7 @@ const ProductListPage = () => {
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Composition</Typography><Typography>{viewItem.composition || '-'}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>MRP</Typography><Typography>₨ {viewItem.mrp?.toFixed(2)}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>TP</Typography><Typography>₨ {viewItem.tp?.toFixed(2)}</Typography></Grid>
-              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>TP %</Typography><Typography>{viewItem.tpPercent || 0}%</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Casting</Typography><Typography>₨ {viewItem.casting?.toFixed(2)}</Typography></Grid>
-              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Casting %</Typography><Typography>{viewItem.castingPercent || 0}%</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Status</Typography><Typography>{viewItem.isActive ? 'Active' : 'Inactive'}</Typography></Grid>
             </Grid>
           )}

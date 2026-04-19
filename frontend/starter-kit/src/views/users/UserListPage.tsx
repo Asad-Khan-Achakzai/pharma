@@ -48,6 +48,12 @@ const PERMISSION_GROUPS: Record<string, string[]> = {
 
 const ALL_PERMISSIONS: string[] = Object.values(PERMISSION_GROUPS).flat()
 
+/** Always granted for Medical Rep users; cannot be removed in the UI. */
+const DASHBOARD_VIEW = 'dashboard.view'
+
+const ensureDashboardPermission = (perms: string[]) =>
+  perms.includes(DASHBOARD_VIEW) ? perms : [...perms, DASHBOARD_VIEW]
+
 const fuzzyFilter: FilterFn<any> = (row, columnId, value, addMeta) => { const r = rankItem(row.getValue(columnId), value); addMeta({ itemRank: r }); return r.passed }
 const columnHelper = createColumnHelper<User>()
 
@@ -79,8 +85,27 @@ const UserListPage = () => {
   useEffect(() => { fetchData() }, [])
 
   const handleOpen = (item?: User) => {
-    if (item) { setEditItem(item); setForm({ name: item.name, email: item.email, password: '', role: item.role, phone: item.phone || '', permissions: item.permissions || [] }) }
-    else { setEditItem(null); setForm({ name: '', email: '', password: '', role: 'MEDICAL_REP', phone: '', permissions: [] }) }
+    if (item) {
+      setEditItem(item)
+      setForm({
+        name: item.name,
+        email: item.email,
+        password: '',
+        role: item.role,
+        phone: item.phone || '',
+        permissions: item.role === 'MEDICAL_REP' ? ensureDashboardPermission(item.permissions || []) : item.permissions || []
+      })
+    } else {
+      setEditItem(null)
+      setForm({
+        name: '',
+        email: '',
+        password: '',
+        role: 'MEDICAL_REP',
+        phone: '',
+        permissions: [DASHBOARD_VIEW]
+      })
+    }
     setOpen(true)
   }
 
@@ -88,6 +113,9 @@ const UserListPage = () => {
     setSaving(true)
     try {
       const payload: any = { ...form }
+      if (payload.role === 'MEDICAL_REP' && Array.isArray(payload.permissions)) {
+        payload.permissions = ensureDashboardPermission(payload.permissions)
+      }
       if (editItem) { delete payload.password; await usersService.update(editItem._id, payload); showSuccess('User updated') }
       else { await usersService.create(payload); showSuccess('User created') }
       setOpen(false); fetchData()
@@ -106,15 +134,21 @@ const UserListPage = () => {
   }, [deleteId])
 
   const togglePermission = (perm: string) => {
-    setForm(prev => ({ ...prev, permissions: prev.permissions.includes(perm) ? prev.permissions.filter(p => p !== perm) : [...prev.permissions, perm] }))
+    if (perm === DASHBOARD_VIEW) return
+    setForm(prev => ({
+      ...prev,
+      permissions: prev.permissions.includes(perm)
+        ? prev.permissions.filter(p => p !== perm)
+        : [...prev.permissions, perm]
+    }))
   }
 
   const selectAllPermissions = useCallback(() => {
-    setForm(prev => ({ ...prev, permissions: [...ALL_PERMISSIONS] }))
+    setForm(prev => ({ ...prev, permissions: ensureDashboardPermission([...ALL_PERMISSIONS]) }))
   }, [])
 
   const clearAllPermissions = useCallback(() => {
-    setForm(prev => ({ ...prev, permissions: [] }))
+    setForm(prev => ({ ...prev, permissions: [DASHBOARD_VIEW] }))
   }, [])
 
   const columns = useMemo<ColumnDef<User, any>[]>(() => [
@@ -190,9 +224,23 @@ const UserListPage = () => {
                   <div key={group} className='mbe-2'>
                     <Typography variant='subtitle2' className='capitalize mbe-1'>{group}</Typography>
                     <div className='flex flex-wrap gap-1'>
-                      {perms.map(perm => (
-                        <FormControlLabel key={perm} control={<Checkbox size='small' checked={form.permissions.includes(perm)} onChange={() => togglePermission(perm)} />} label={perm.split('.')[1]} />
-                      ))}
+                      {perms.map(perm => {
+                        const isLockedDashboard = perm === DASHBOARD_VIEW
+                        return (
+                          <FormControlLabel
+                            key={perm}
+                            control={
+                              <Checkbox
+                                size='small'
+                                checked={isLockedDashboard ? true : form.permissions.includes(perm)}
+                                disabled={isLockedDashboard}
+                                onChange={() => togglePermission(perm)}
+                              />
+                            }
+                            label={perm.split('.')[1]}
+                          />
+                        )
+                      })}
                     </div>
                   </div>
                 ))}

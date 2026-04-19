@@ -14,6 +14,8 @@ const stockTransferItemSchema = new mongoose.Schema(
 const stockTransferSchema = new mongoose.Schema(
   {
     companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', required: true },
+    /** When set, stock is moved from this distributor to `distributorId`. When null/omitted, stock is issued from company to `distributorId`. */
+    fromDistributorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Distributor', default: null },
     distributorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Distributor', required: true },
     items: [stockTransferItemSchema],
     totalShippingCost: { type: Number, default: 0 },
@@ -25,6 +27,7 @@ const stockTransferSchema = new mongoose.Schema(
 );
 
 stockTransferSchema.index({ companyId: 1, distributorId: 1, transferDate: -1 });
+stockTransferSchema.index({ companyId: 1, fromDistributorId: 1, transferDate: -1 });
 
 stockTransferSchema.plugin(softDeletePlugin);
 
