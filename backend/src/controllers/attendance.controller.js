@@ -6,7 +6,7 @@ const ApiError = require('../utils/ApiError');
 const { ROLES } = require('../constants/enums');
 
 const assertEmployeeScope = (req, employeeId) => {
-  if (req.user.role === ROLES.ADMIN) return;
+  if (req.user.role === ROLES.ADMIN || req.user.role === ROLES.SUPER_ADMIN) return;
   if (employeeId !== req.user.userId) throw new ApiError(403, 'You can only access your own attendance');
 };
 
@@ -54,9 +54,9 @@ const monthlySummary = asyncHandler(async (req, res) => {
   ApiResponse.success(res, data);
 });
 
-/** Only ADMIN — correct mistaken check-in for an employee (today, Pacific). */
+/** Only ADMIN / SUPER_ADMIN — correct mistaken check-in for an employee (today, Pacific). */
 const adminMarkAbsentToday = asyncHandler(async (req, res) => {
-  if (req.user.role !== ROLES.ADMIN) {
+  if (req.user.role !== ROLES.ADMIN && req.user.role !== ROLES.SUPER_ADMIN) {
     throw new ApiError(403, 'Only administrators can mark employees absent');
   }
   const { employeeId } = req.body;

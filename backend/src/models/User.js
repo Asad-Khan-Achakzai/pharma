@@ -6,6 +6,8 @@ const { softDeletePlugin } = require('../plugins/softDelete');
 const userSchema = new mongoose.Schema(
   {
     companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', required: true },
+    /** For SUPER_ADMIN: operating tenant when using business APIs (server-side source of truth). */
+    activeCompanyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', default: null },
     name: { type: String, required: true, trim: true },
     email: { type: String, required: true, trim: true, lowercase: true },
     password: { type: String, required: true, select: false },

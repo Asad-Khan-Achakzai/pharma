@@ -22,6 +22,7 @@ const authenticate = asyncHandler(async (req, _res, next) => {
   req.user = {
     userId: user._id,
     companyId: user.companyId,
+    activeCompanyId: user.activeCompanyId || null,
     role: user.role,
     permissions: user.permissions || [],
     name: user.name,

@@ -120,7 +120,23 @@ const UserListPage = () => {
   const columns = useMemo<ColumnDef<User, any>[]>(() => [
     columnHelper.accessor('name', { header: 'Name', cell: ({ row }) => <Typography fontWeight={500}>{row.original.name}</Typography> }),
     columnHelper.accessor('email', { header: 'Email' }),
-    columnHelper.accessor('role', { header: 'Role', cell: ({ row }) => <Chip label={row.original.role} color={row.original.role === 'ADMIN' ? 'primary' : 'default'} size='small' variant='tonal' /> }),
+    columnHelper.accessor('role', {
+      header: 'Role',
+      cell: ({ row }) => (
+        <Chip
+          label={row.original.role}
+          color={
+            row.original.role === 'ADMIN'
+              ? 'primary'
+              : row.original.role === 'SUPER_ADMIN'
+                ? 'secondary'
+                : 'default'
+          }
+          size='small'
+          variant='tonal'
+        />
+      )
+    }),
     columnHelper.display({ id: 'status', header: 'Status', cell: ({ row }) => <Chip label={row.original.isActive ? 'Active' : 'Inactive'} color={row.original.isActive ? 'success' : 'error'} size='small' variant='tonal' /> }),
     columnHelper.display({ id: 'actions', header: 'Actions', cell: ({ row }) => (
       <div className='flex gap-1'>
@@ -194,7 +210,7 @@ const UserListPage = () => {
             <Grid container spacing={3} className='pbs-4'>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Name</Typography><Typography fontWeight={500}>{viewItem.name}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Email</Typography><Typography>{viewItem.email}</Typography></Grid>
-              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Role</Typography><Chip label={viewItem.role} color={viewItem.role === 'ADMIN' ? 'primary' : 'default'} size='small' variant='tonal' /></Grid>
+              <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Role</Typography><Chip label={viewItem.role} color={viewItem.role === 'ADMIN' ? 'primary' : viewItem.role === 'SUPER_ADMIN' ? 'secondary' : 'default'} size='small' variant='tonal' /></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Status</Typography><Chip label={viewItem.isActive ? 'Active' : 'Inactive'} color={viewItem.isActive ? 'success' : 'error'} size='small' variant='tonal' /></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Phone</Typography><Typography>{viewItem.phone || '-'}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Last Login</Typography><Typography>{viewItem.lastLoginAt ? new Date(viewItem.lastLoginAt).toLocaleString() : '-'}</Typography></Grid>

@@ -6,7 +6,7 @@ const checkPermission = (...requiredPermissions) => {
       return next(new ApiError(401, 'Authentication required'));
     }
 
-    if (req.user.role === 'ADMIN') {
+    if (req.user.role === 'ADMIN' || req.user.role === 'SUPER_ADMIN') {
       return next();
     }
 

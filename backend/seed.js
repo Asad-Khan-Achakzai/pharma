@@ -28,6 +28,7 @@
  *   Admin:     admin@pharmaplus.pk  / Admin@123
  *   Med Rep 1: ahmed@pharmaplus.pk  / Rep@1234
  *   Med Rep 2: sara@pharmaplus.pk   / Rep@1234
+ *   Super:     superadmin@platform.local / Super@123  (SUPER_ADMIN; active context = demo company)
  */
 
 require('dotenv').config();
@@ -106,6 +107,29 @@ async function seed() {
     ]
   });
   console.log('Created 3 users (1 admin, 2 reps)');
+
+  const platformCo = await Company.create({
+    name: 'Platform Administration',
+    address: 'Internal',
+    city: '—',
+    state: '—',
+    country: 'Pakistan',
+    phone: '—',
+    email: 'platform.internal@local',
+    currency: 'PKR',
+    isActive: true
+  });
+  await User.create({
+    companyId: platformCo._id,
+    activeCompanyId: C,
+    name: 'Super Admin',
+    email: 'superadmin@platform.local',
+    password: 'Super@123',
+    role: 'SUPER_ADMIN',
+    phone: '+92-300-0000000',
+    permissions: []
+  });
+  console.log('Created platform company + SUPER_ADMIN user');
 
   // ─── Products (realistic pharma) ───
   const productsData = [

@@ -25,6 +25,7 @@ import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { reportsService } from '@/services/reports.service'
 import { attendanceService } from '@/services/attendance.service'
 import { useAuth } from '@/contexts/AuthContext'
+import { isAdminLike } from '@/utils/roleHelpers'
 import ProfitCostDashboardCharts from '@/views/dashboard/ProfitCostDashboardCharts'
 import InventoryDashboardCharts from '@/views/dashboard/InventoryDashboardCharts'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
@@ -79,9 +80,9 @@ const DashboardPage = () => {
   const { user, hasPermission } = useAuth()
   /** Reps often have no attendance.* strings in DB; admins bypass hasPermission anyway */
   const showCompanyAttendance =
-    user?.role === 'ADMIN' || user?.role === 'MEDICAL_REP' || hasPermission('attendance.view')
+    isAdminLike(user?.role) || user?.role === 'MEDICAL_REP' || hasPermission('attendance.view')
   const showMyAttendance =
-    user?.role === 'ADMIN' || user?.role === 'MEDICAL_REP' || hasPermission('attendance.mark')
+    isAdminLike(user?.role) || user?.role === 'MEDICAL_REP' || hasPermission('attendance.mark')
   const [data, setData] = useState<any>(null)
   const [loadError, setLoadError] = useState(false)
   const [dashboardDataLoading, setDashboardDataLoading] = useState(true)
@@ -101,13 +102,13 @@ const DashboardPage = () => {
   const textSecondary = 'var(--mui-palette-text-secondary)'
   const canViewReports = hasPermission('reports.view')
   const canViewInventory = hasPermission('inventory.view')
-  const isAdmin = user?.role === 'ADMIN'
+  const isAdmin = isAdminLike(user?.role)
 
   const loadAttendanceWidgets = useCallback(async () => {
     const canCompany =
-      user?.role === 'ADMIN' || user?.role === 'MEDICAL_REP' || hasPermission('attendance.view')
+      isAdminLike(user?.role) || user?.role === 'MEDICAL_REP' || hasPermission('attendance.view')
     const canMine =
-      user?.role === 'ADMIN' || user?.role === 'MEDICAL_REP' || hasPermission('attendance.mark')
+      isAdminLike(user?.role) || user?.role === 'MEDICAL_REP' || hasPermission('attendance.mark')
 
     if (canCompany) {
       setTeamAttendanceLoading(true)

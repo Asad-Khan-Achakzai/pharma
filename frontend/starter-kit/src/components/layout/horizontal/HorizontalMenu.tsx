@@ -54,10 +54,10 @@ const RenderVerticalExpandIcon = ({ open, transitionDuration }: RenderVerticalEx
 const HorizontalMenu = () => {
   const verticalNavOptions = useVerticalNav()
   const theme = useTheme()
-  const { hasPermission } = useAuth()
+  const { hasPermission, user } = useAuth()
 
   const { transitionDuration } = verticalNavOptions
-  const filteredMenuData = filterMenuByPermission(horizontalMenuData(), hasPermission)
+  const filteredMenuData = filterMenuByPermission(horizontalMenuData(), hasPermission, user?.role)
 
   return (
     <HorizontalNav

@@ -5,16 +5,7 @@ const Company = require('../models/Company');
 const ApiError = require('../utils/ApiError');
 const { ROLES } = require('../constants/enums');
 const { ALL_PERMISSIONS } = require('../constants/permissions');
-
-const generateTokens = (userId, companyId) => {
-  const accessToken = jwt.sign({ userId, companyId }, env.JWT_ACCESS_SECRET, {
-    expiresIn: env.JWT_ACCESS_EXPIRY
-  });
-  const refreshToken = jwt.sign({ userId, companyId }, env.JWT_REFRESH_SECRET, {
-    expiresIn: env.JWT_REFRESH_EXPIRY
-  });
-  return { accessToken, refreshToken };
-};
+const { generateTokens } = require('./auth.tokens');
 
 const register = async ({ companyName, companyEmail, companyPhone, name, email, password }) => {
   const existingCompany = await Company.findOne({ email: companyEmail });
@@ -88,7 +79,7 @@ const refreshToken = async (token) => {
 };
 
 const getMe = async (userId) => {
-  const user = await User.findById(userId).populate('companyId');
+  const user = await User.findById(userId).populate('companyId').populate('activeCompanyId');
   if (!user) {
     throw new ApiError(404, 'User not found');
   }

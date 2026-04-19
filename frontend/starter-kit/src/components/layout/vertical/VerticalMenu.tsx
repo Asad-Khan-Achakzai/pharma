@@ -46,10 +46,10 @@ const RenderExpandIcon = ({ open, transitionDuration }: RenderExpandIconProps) =
 const VerticalMenu = ({ scrollMenu }: Props) => {
   const theme = useTheme()
   const verticalNavOptions = useVerticalNav()
-  const { hasPermission } = useAuth()
+  const { hasPermission, user } = useAuth()
 
   const { isBreakpointReached, transitionDuration } = verticalNavOptions
-  const filteredMenuData = filterMenuByPermission(verticalMenuData(), hasPermission)
+  const filteredMenuData = filterMenuByPermission(verticalMenuData(), hasPermission, user?.role)
 
   const ScrollWrapper = isBreakpointReached ? 'div' : PerfectScrollbar
 

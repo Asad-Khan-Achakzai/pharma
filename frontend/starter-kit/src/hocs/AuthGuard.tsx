@@ -40,6 +40,26 @@ const AuthGuard = ({ children }: { children: ReactNode }) => {
 
   if (!user) return null
 
+  if (pathname.startsWith('/super-admin')) {
+    if (user.role !== 'SUPER_ADMIN') {
+      return (
+        <div className='flex items-center justify-center min-bs-screen'>
+          <Card className='max-is-md'>
+            <CardContent className='flex flex-col items-center gap-4 p-8 text-center'>
+              <i className='tabler-lock text-5xl text-error' />
+              <Typography variant='h5'>Access Denied</Typography>
+              <Typography color='text.secondary'>Super Admin area is restricted to platform administrators.</Typography>
+              <Button variant='contained' onClick={() => router.replace('/home')}>
+                Go to Dashboard
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      )
+    }
+    return <>{children}</>
+  }
+
   const requiredPermission = getRequiredPermission(pathname)
 
   if (requiredPermission && !hasPermission(requiredPermission)) {

@@ -7,7 +7,7 @@ const { ROLES } = require('../constants/enums');
  */
 const adminRepOrPermission = (permission) => (req, _res, next) => {
   if (!req.user) return next(new ApiError(401, 'Authentication required'));
-  if (req.user.role === ROLES.ADMIN) return next();
+  if (req.user.role === ROLES.ADMIN || req.user.role === ROLES.SUPER_ADMIN) return next();
   if (req.user.role === ROLES.MEDICAL_REP) return next();
   const perms = req.user.permissions || [];
   if (perms.includes(permission)) return next();

@@ -27,6 +27,10 @@ const list = async (companyId, query) => {
 };
 
 const create = async (companyId, data, reqUser) => {
+  if (data.role === ROLES.SUPER_ADMIN) {
+    throw new ApiError(400, 'SUPER_ADMIN accounts cannot be created from tenant user management');
+  }
+
   const existing = await User.findOne({ companyId, email: data.email });
   if (existing) {
     throw new ApiError(409, 'User with this email already exists in this company');
@@ -59,6 +63,10 @@ const getById = async (companyId, id) => {
 const update = async (companyId, id, data, reqUser) => {
   const user = await User.findOne({ _id: id, companyId });
   if (!user) throw new ApiError(404, 'User not found');
+
+  if (user.role === ROLES.SUPER_ADMIN || data.role === ROLES.SUPER_ADMIN) {
+    throw new ApiError(400, 'SUPER_ADMIN role cannot be changed from tenant user management');
+  }
 
   const before = user.toJSON();
 

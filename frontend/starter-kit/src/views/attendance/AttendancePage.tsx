@@ -15,6 +15,7 @@ import { showApiError } from '@/utils/apiErrors'
 import { attendanceService } from '@/services/attendance.service'
 import { usersService } from '@/services/users.service'
 import { useAuth } from '@/contexts/AuthContext'
+import { isAdminLike } from '@/utils/roleHelpers'
 
 type AttRow = {
   _id: string
@@ -39,7 +40,7 @@ const formatYyyyMm = (d: Date) =>
 
 const AttendancePage = () => {
   const { user, hasPermission } = useAuth()
-  const isAdmin = user?.role === 'ADMIN'
+  const isAdmin = isAdminLike(user?.role)
   const canViewReport = hasPermission('attendance.view')
 
   const [users, setUsers] = useState<{ _id: string; name: string }[]>([])

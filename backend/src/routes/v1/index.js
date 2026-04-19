@@ -22,8 +22,10 @@ const attendanceRoutes = require('./attendance.routes');
 const salaryStructureRoutes = require('./salaryStructure.routes');
 const reportRoutes = require('./report.routes');
 const auditLogRoutes = require('./auditLog.routes');
+const superAdminRoutes = require('./superAdmin.routes');
 
 router.use('/auth', authRoutes);
+router.use('/super-admin', superAdminRoutes);
 router.use('/users', userRoutes);
 router.use('/products', productRoutes);
 router.use('/distributors', distributorRoutes);
