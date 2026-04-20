@@ -1,5 +1,10 @@
 const Joi = require('joi');
 
+const bonusSchemeSchema = Joi.object({
+  buyQty: Joi.number().min(0).default(0),
+  getQty: Joi.number().min(0).default(0)
+});
+
 const createPharmacySchema = Joi.object({
   name: Joi.string().required().trim().min(1).max(200),
   address: Joi.string().trim().allow(''),
@@ -7,7 +12,8 @@ const createPharmacySchema = Joi.object({
   state: Joi.string().trim().allow(''),
   phone: Joi.string().trim().allow(''),
   email: Joi.string().email().trim().allow(''),
-  discountOnTP: Joi.number().min(0).max(100).default(0)
+  discountOnTP: Joi.number().min(0).max(100).default(0),
+  bonusScheme: bonusSchemeSchema.optional()
 });
 
 const updatePharmacySchema = Joi.object({
@@ -18,7 +24,8 @@ const updatePharmacySchema = Joi.object({
   phone: Joi.string().trim().allow(''),
   email: Joi.string().email().trim().allow(''),
   discountOnTP: Joi.number().min(0).max(100),
-  isActive: Joi.boolean()
+  isActive: Joi.boolean(),
+  bonusScheme: bonusSchemeSchema.optional()
 }).min(1);
 
 const createDoctorSchema = Joi.object({

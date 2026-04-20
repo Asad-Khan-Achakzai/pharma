@@ -4,6 +4,8 @@ const createOrderSchema = Joi.object({
   pharmacyId: Joi.string().required(),
   doctorId: Joi.string().allow(null, ''),
   distributorId: Joi.string().required(),
+  /** Assigned medical rep for the order; defaults to creator on server if omitted */
+  medicalRepId: Joi.string().optional(),
   items: Joi.array().items(
     Joi.object({
       productId: Joi.string().required(),
@@ -19,6 +21,7 @@ const updateOrderSchema = Joi.object({
   pharmacyId: Joi.string(),
   doctorId: Joi.string().allow(null, ''),
   distributorId: Joi.string(),
+  medicalRepId: Joi.string().optional(),
   items: Joi.array().items(
     Joi.object({
       productId: Joi.string().required(),

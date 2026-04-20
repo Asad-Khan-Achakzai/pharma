@@ -8,6 +8,7 @@ import CardHeader from '@mui/material/CardHeader'
 import CardContent from '@mui/material/CardContent'
 import Button from '@mui/material/Button'
 import Grid from '@mui/material/Grid'
+import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
 import Chip from '@mui/material/Chip'
 import Divider from '@mui/material/Divider'
@@ -21,6 +22,7 @@ import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
 import CustomTextField from '@core/components/mui/TextField'
 import { ordersService } from '@/services/orders.service'
+import { lineTotalQuantity } from '@/utils/bonus'
 
 const statusColors: Record<string, 'success' | 'warning' | 'info' | 'error' | 'default'> = {
   PENDING: 'warning', PARTIALLY_DELIVERED: 'info', DELIVERED: 'success', PARTIALLY_RETURNED: 'warning', RETURNED: 'error', CANCELLED: 'default'
@@ -56,7 +58,21 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
   useEffect(() => { fetchOrder() }, [params.id])
 
   const openDeliver = () => {
-    const items = order.items.filter((i: any) => i.deliveredQty < i.quantity).map((i: any) => ({ productId: i.productId?._id || i.productId, productName: i.productName, maxQty: i.quantity - i.deliveredQty, quantity: i.quantity - i.deliveredQty }))
+    const items = order.items
+      .filter((i: any) => {
+        const lineMax = lineTotalQuantity(i.quantity, i.bonusQuantity ?? 0)
+        return i.deliveredQty < lineMax
+      })
+      .map((i: any) => {
+        const lineMax = lineTotalQuantity(i.quantity, i.bonusQuantity ?? 0)
+        const remaining = lineMax - i.deliveredQty
+        return {
+          productId: i.productId?._id || i.productId,
+          productName: i.productName,
+          maxQty: remaining,
+          quantity: remaining
+        }
+      })
     setDeliverItems(items)
     setDeliverOpen(true)
   }
@@ -107,6 +123,16 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
   const canReturn = hasReturnPerm && ['DELIVERED', 'PARTIALLY_DELIVERED', 'PARTIALLY_RETURNED'].includes(order.status)
   const canEditPending = hasEditPerm && order.status === 'PENDING'
 
+  const pk = (n: number | null | undefined) =>
+    n != null && !Number.isNaN(n)
+      ? `₨ ${n.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : '—'
+  const hasOrderFinancialSnap =
+    order.finalCompanyRevenue != null ||
+    order.pharmacyDiscountAmount != null ||
+    order.totalAmount != null
+  const grossTotal = order.totalAmount ?? order.totalOrderedAmount
+
   return (
     <Grid container spacing={6}>
       <Grid size={{ xs: 12, md: 8 }}>
@@ -140,11 +166,71 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
             }
           />
           <CardContent>
-            <div className='flex gap-4 mbe-4'>
+            <div className='flex flex-wrap gap-4 mbe-4'>
               <Chip label={order.status} color={statusColors[order.status] || 'default'} />
-              <Typography>Total: ₨ {order.totalOrderedAmount?.toFixed(2)}</Typography>
               <Typography>Date: {new Date(order.createdAt).toLocaleDateString()}</Typography>
             </div>
+            {hasOrderFinancialSnap ? (
+              <Box className='mbe-4 rounded p-4' sx={{ border: 1, borderColor: 'divider' }}>
+                <Typography variant='subtitle2' color='text.secondary' className='mbe-2'>
+                  Order financial snapshot (at order time)
+                </Typography>
+                <Grid container spacing={2}>
+                  <Grid size={{ xs: 12, sm: 6 }}>
+                    <Typography variant='body2' color='text.secondary'>
+                      Total amount (gross TP)
+                    </Typography>
+                    <Typography fontWeight={600}>{pk(grossTotal)}</Typography>
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 6 }}>
+                    <Typography variant='body2' color='text.secondary'>
+                      Pharmacy discount
+                    </Typography>
+                    <Typography fontWeight={600}>{pk(order.pharmacyDiscountAmount)}</Typography>
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 6 }}>
+                    <Typography variant='body2' color='text.secondary'>
+                      Amount after pharmacy discount
+                    </Typography>
+                    <Typography fontWeight={600}>{pk(order.amountAfterPharmacyDiscount)}</Typography>
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 6 }}>
+                    <Typography variant='body2' color='text.secondary'>
+                      Distributor commission (on gross TP)
+                    </Typography>
+                    <Typography fontWeight={600}>{pk(order.distributorCommissionAmount)}</Typography>
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 6 }}>
+                    <Typography variant='body2' color='text.secondary'>
+                      Final company revenue
+                    </Typography>
+                    <Typography fontWeight={600} color='primary.main'>
+                      {pk(order.finalCompanyRevenue)}
+                    </Typography>
+                  </Grid>
+                  {order.totalBonusQuantity != null && order.totalBonusQuantity > 0 && (
+                    <Grid size={{ xs: 12, sm: 6 }}>
+                      <Typography variant='body2' color='text.secondary'>
+                        Total bonus units (order)
+                      </Typography>
+                      <Typography fontWeight={600}>{order.totalBonusQuantity}</Typography>
+                    </Grid>
+                  )}
+                  {order.totalCastingCost != null && order.totalCastingCost > 0 && (
+                    <Grid size={{ xs: 12, sm: 6 }}>
+                      <Typography variant='body2' color='text.secondary'>
+                        Inventory cost snapshot (casting × units)
+                      </Typography>
+                      <Typography fontWeight={600}>{pk(order.totalCastingCost)}</Typography>
+                    </Grid>
+                  )}
+                </Grid>
+              </Box>
+            ) : (
+              <Typography className='mbe-4'>
+                Total (gross TP): ₨ {order.totalOrderedAmount?.toFixed(2)}
+              </Typography>
+            )}
             <Divider className='mbe-4' />
             <Grid container spacing={2}>
               <Grid size={{ xs: 6, sm: 3 }}><Typography variant='body2' color='text.secondary'>Pharmacy</Typography><Typography>{order.pharmacyId?.name}</Typography></Grid>
@@ -154,19 +240,69 @@ const OrderDetailPage = ({ paramsPromise }: { paramsPromise: Promise<{ id: strin
             </Grid>
             <Divider className='mbs-4 mbe-4' />
             <Typography variant='h6' className='mbe-2'>Items</Typography>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd' }}><th style={{ padding: 8 }}>Product</th><th style={{ padding: 8 }}>Ordered</th><th style={{ padding: 8 }}>Delivered</th><th style={{ padding: 8 }}>Returned</th><th style={{ padding: 8 }}>TP</th><th style={{ padding: 8 }}>Casting</th></tr></thead>
-              <tbody>{order.items.map((item: any, i: number) => (
-                <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
-                  <td style={{ padding: 8 }}>{item.productName || item.productId?.name}</td>
-                  <td style={{ padding: 8 }}>{item.quantity}</td>
-                  <td style={{ padding: 8 }}>{item.deliveredQty}</td>
-                  <td style={{ padding: 8 }}>{item.returnedQty}</td>
-                  <td style={{ padding: 8 }}>₨ {item.tpAtTime?.toFixed(2)}</td>
-                  <td style={{ padding: 8 }}>₨ {item.castingAtTime?.toFixed(2)}</td>
+            <Box
+              sx={{
+                overflowX: 'auto',
+                maxWidth: '100%',
+                WebkitOverflowScrolling: 'touch',
+                mx: { xs: -2, sm: 0 },
+                px: { xs: 2, sm: 0 }
+              }}
+            >
+              <table
+                style={{
+                  width: '100%',
+                  minWidth: hasOrderFinancialSnap ? 1180 : 720,
+                  borderCollapse: 'collapse',
+                  tableLayout: 'auto'
+                }}
+              >
+              <thead>
+                <tr style={{ textAlign: 'left', borderBottom: '1px solid #ddd' }}>
+                  <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Product</th>
+                  <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Paid</th>
+                  <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Bonus</th>
+                  <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Total</th>
+                  <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Delivered</th>
+                  <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Returned</th>
+                  <th style={{ padding: 8, whiteSpace: 'nowrap' }}>TP</th>
+                  <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Casting</th>
+                  {hasOrderFinancialSnap && (
+                    <>
+                      <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Charged (TP×paid)</th>
+                      <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Pharm. disc.</th>
+                      <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Net</th>
+                      <th style={{ padding: 8, whiteSpace: 'nowrap' }}>Dist. comm.</th>
+                      <th style={{ padding: 8, whiteSpace: 'nowrap', minWidth: 112 }}>Company</th>
+                    </>
+                  )}
                 </tr>
-              ))}</tbody>
+              </thead>
+              <tbody>
+                {order.items.map((item: any, i: number) => (
+                  <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
+                    <td style={{ padding: 8 }}>{item.productName || item.productId?.name}</td>
+                    <td style={{ padding: 8, whiteSpace: 'nowrap' }}>{item.quantity}</td>
+                    <td style={{ padding: 8, whiteSpace: 'nowrap' }}>{item.bonusQuantity ?? 0}</td>
+                    <td style={{ padding: 8, whiteSpace: 'nowrap' }}>{lineTotalQuantity(item.quantity, item.bonusQuantity ?? 0)}</td>
+                    <td style={{ padding: 8, whiteSpace: 'nowrap' }}>{item.deliveredQty}</td>
+                    <td style={{ padding: 8, whiteSpace: 'nowrap' }}>{item.returnedQty}</td>
+                    <td style={{ padding: 8, whiteSpace: 'nowrap' }}>₨ {item.tpAtTime?.toFixed(2)}</td>
+                    <td style={{ padding: 8, whiteSpace: 'nowrap' }}>₨ {item.castingAtTime?.toFixed(2)}</td>
+                    {hasOrderFinancialSnap && (
+                      <>
+                        <td style={{ padding: 8, whiteSpace: 'nowrap' }}>{pk(item.grossAmount)}</td>
+                        <td style={{ padding: 8, whiteSpace: 'nowrap' }}>{pk(item.pharmacyDiscountAmount)}</td>
+                        <td style={{ padding: 8, whiteSpace: 'nowrap' }}>{pk(item.netAfterPharmacy)}</td>
+                        <td style={{ padding: 8, whiteSpace: 'nowrap' }}>{pk(item.distributorCommissionAmount)}</td>
+                        <td style={{ padding: 8, whiteSpace: 'nowrap', minWidth: 112 }}>{pk(item.finalCompanyAmount)}</td>
+                      </>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
             </table>
+            </Box>
           </CardContent>
         </Card>
       </Grid>

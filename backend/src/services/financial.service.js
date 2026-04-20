@@ -57,6 +57,55 @@ const computeLineSnapshot = (orderItem, qty, distributor) => {
   };
 };
 
+/**
+ * Per order line at create/update: full ordered qty, same math as computeLineSnapshot (delivery).
+ * Snapshots are not recomputed later.
+ */
+const computeOrderLinePreview = (orderItem, distributor) => {
+  const clinic = orderItem.clinicDiscount ?? 0;
+  const distDisc = orderItem.distributorDiscount ?? 0;
+  if (clinic < 0 || distDisc < 0) {
+    throw new ApiError(400, 'Discount percentages must be zero or greater.');
+  }
+  const paidQty = Number(orderItem.quantity) || 0;
+  const snap = computeLineSnapshot(orderItem, paidQty, distributor);
+  const pharmacyDiscountAmount = roundPKR(snap.tpLineTotal - snap.linePharmacyNet);
+  const bonusQty = Number(orderItem.bonusQuantity) || 0;
+  const physicalQty = paidQty + bonusQty;
+  const inventoryCostAmount = roundPKR((orderItem.castingAtTime || 0) * physicalQty);
+  return {
+    grossAmount: snap.tpLineTotal,
+    pharmacyDiscountAmount,
+    netAfterPharmacy: snap.linePharmacyNet,
+    distributorCommissionAmount: snap.distributorShare,
+    finalCompanyAmount: snap.companyShare,
+    inventoryCostAmount
+  };
+};
+
+/**
+ * Aggregate order-level preview totals from line previews (rounded PKR sums).
+ */
+const enrichOrderItemsWithFinancialSnapshot = (orderItems, distributor) => {
+  const lineSnapshots = orderItems.map((oi) => computeOrderLinePreview(oi, distributor));
+  const sumField = (key) => roundPKR(lineSnapshots.reduce((s, r) => s + r[key], 0));
+  const totalBonusQuantity = orderItems.reduce((s, oi) => s + (Number(oi.bonusQuantity) || 0), 0);
+  const totals = {
+    totalAmount: sumField('grossAmount'),
+    pharmacyDiscountAmount: sumField('pharmacyDiscountAmount'),
+    amountAfterPharmacyDiscount: sumField('netAfterPharmacy'),
+    distributorCommissionAmount: sumField('distributorCommissionAmount'),
+    finalCompanyRevenue: sumField('finalCompanyAmount'),
+    totalBonusQuantity,
+    totalCastingCost: sumField('inventoryCostAmount')
+  };
+  const items = orderItems.map((oi, i) => ({
+    ...oi,
+    ...lineSnapshots[i]
+  }));
+  return { items, totals };
+};
+
 const buildLedgerBase = (companyId, entityType, entityId, type, amount, referenceType, referenceId, description, date, meta) => ({
   companyId,
   entityType,
@@ -767,6 +816,8 @@ const getDistributorClearingBalance = async (companyId, distributorId) => {
 module.exports = {
   getCommissionPercent,
   computeLineSnapshot,
+  computeOrderLinePreview,
+  enrichOrderItemsWithFinancialSnapshot,
   postDeliveryLedgers,
   computePharmacyReceivableState,
   fifoAllocateCollection,

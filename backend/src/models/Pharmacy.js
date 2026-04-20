@@ -11,6 +11,10 @@ const pharmacySchema = new mongoose.Schema(
     phone: { type: String, trim: true },
     email: { type: String, trim: true, lowercase: true },
     discountOnTP: { type: Number, default: 0 },
+    bonusScheme: {
+      buyQty: { type: Number, default: 0 },
+      getQty: { type: Number, default: 0 }
+    },
     isActive: { type: Boolean, default: true }
   },
   { timestamps: true }

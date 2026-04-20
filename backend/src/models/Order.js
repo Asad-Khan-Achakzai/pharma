@@ -12,7 +12,20 @@ const orderItemSchema = new mongoose.Schema(
     tpAtTime: { type: Number, required: true },
     castingAtTime: { type: Number, required: true },
     distributorDiscount: { type: Number, default: 0 },
-    clinicDiscount: { type: Number, default: 0 }
+    clinicDiscount: { type: Number, default: 0 },
+    bonusScheme: {
+      buyQty: { type: Number, default: 0 },
+      getQty: { type: Number, default: 0 }
+    },
+    bonusQuantity: { type: Number, default: 0 },
+    /** Snapshotted at order create/update; matches delivery computeLineSnapshot for full line qty */
+    grossAmount: { type: Number },
+    pharmacyDiscountAmount: { type: Number },
+    netAfterPharmacy: { type: Number },
+    distributorCommissionAmount: { type: Number },
+    finalCompanyAmount: { type: Number },
+    /** casting × (paid + bonus) units — snapshot at order time */
+    inventoryCostAmount: { type: Number }
   },
   { _id: true }
 );
@@ -32,6 +45,16 @@ const orderSchema = new mongoose.Schema(
       default: ORDER_STATUS.PENDING
     },
     totalOrderedAmount: { type: Number, default: 0 },
+    /** Gross TP total (same basis as totalOrderedAmount); stored for API clarity */
+    totalAmount: { type: Number, default: 0 },
+    pharmacyDiscountAmount: { type: Number, default: 0 },
+    amountAfterPharmacyDiscount: { type: Number, default: 0 },
+    distributorCommissionAmount: { type: Number, default: 0 },
+    finalCompanyRevenue: { type: Number, default: 0 },
+    /** Sum of line bonus (free) units — reporting */
+    totalBonusQuantity: { type: Number, default: 0 },
+    /** casting × (paid + bonus) per line, summed — inventory cost snapshot at order time */
+    totalCastingCost: { type: Number, default: 0 },
     notes: { type: String }
   },
   { timestamps: true }

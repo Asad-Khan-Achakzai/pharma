@@ -1,4 +1,11 @@
 const Pharmacy = require('../models/Pharmacy');
+const { normalizeBonusScheme } = require('../utils/bonus');
+
+const applyBonusSchemeInput = (data) => {
+  if (data.bonusScheme !== undefined) {
+    data.bonusScheme = normalizeBonusScheme(data.bonusScheme);
+  }
+};
 const Doctor = require('../models/Doctor');
 const Ledger = require('../models/Ledger');
 const ApiError = require('../utils/ApiError');
@@ -23,6 +30,7 @@ const list = async (companyId, query) => {
 };
 
 const create = async (companyId, data, reqUser) => {
+  applyBonusSchemeInput(data);
   const pharmacy = await Pharmacy.create({ ...data, companyId, createdBy: reqUser.userId });
   await auditService.log({ companyId, userId: reqUser.userId, action: 'pharmacy.create', entityType: 'Pharmacy', entityId: pharmacy._id, changes: { after: pharmacy.toObject() } });
   return pharmacy;
@@ -56,6 +64,7 @@ const update = async (companyId, id, data, reqUser) => {
   const pharmacy = await Pharmacy.findOne({ _id: id, companyId });
   if (!pharmacy) throw new ApiError(404, 'Pharmacy not found');
   const before = pharmacy.toObject();
+  applyBonusSchemeInput(data);
   Object.assign(pharmacy, { ...data, updatedBy: reqUser.userId });
   await pharmacy.save();
   await auditService.log({ companyId, userId: reqUser.userId, action: 'pharmacy.update', entityType: 'Pharmacy', entityId: pharmacy._id, changes: { before, after: pharmacy.toObject() } });

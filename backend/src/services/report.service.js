@@ -21,7 +21,7 @@ const nd = { $ne: true };
 
 const dashboard = async (companyId) => {
   const cid = objectId(companyId);
-  const [salesAgg, expenseAgg, orderCounts, paymentAgg, outstandingAgg] = await Promise.all([
+  const [salesAgg, expenseAgg, orderCounts, paymentAgg, outstandingAgg, bonusAgg] = await Promise.all([
     Transaction.aggregate([
       { $match: { companyId: cid, type: 'SALE', isDeleted: nd } },
       { $group: { _id: null, totalRevenue: { $sum: '$revenue' }, totalProfit: { $sum: '$profit' } } }
@@ -47,6 +47,10 @@ const dashboard = async (companyId) => {
           totalCredit: { $sum: { $cond: [{ $eq: ['$type', 'CREDIT'] }, '$amount', 0] } }
         }
       }
+    ]),
+    Order.aggregate([
+      { $match: { companyId: cid, isDeleted: nd } },
+      { $group: { _id: null, totalBonusUnitsOnOrders: { $sum: { $ifNull: ['$totalBonusQuantity', 0] } } } }
     ])
   ]);
 
@@ -63,6 +67,8 @@ const dashboard = async (companyId) => {
   const orderStatusMap = {};
   orderCounts.forEach((o) => { orderStatusMap[o._id] = o.count; });
 
+  const bonusRow = bonusAgg[0] || { totalBonusUnitsOnOrders: 0 };
+
   return {
     totalSales: roundPKR(sales.totalRevenue),
     grossProfit: roundPKR(sales.totalProfit),
@@ -70,7 +76,8 @@ const dashboard = async (companyId) => {
     netProfit: roundPKR(netProfit[0]?.net || 0),
     totalPaid: roundPKR(paid.totalPaid),
     totalOutstanding: roundPKR(outstanding.totalDebit - outstanding.totalCredit),
-    ordersByStatus: orderStatusMap
+    ordersByStatus: orderStatusMap,
+    totalBonusGiven: bonusRow.totalBonusUnitsOnOrders || 0
   };
 };
 

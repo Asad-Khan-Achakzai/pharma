@@ -10,6 +10,7 @@ const Transaction = require('../models/Transaction');
 const Product = require('../models/Product');
 const Distributor = require('../models/Distributor');
 const Pharmacy = require('../models/Pharmacy');
+const User = require('../models/User');
 const ApiError = require('../utils/ApiError');
 const { roundPKR } = require('../utils/currency');
 const { generateOrderNumber } = require('../utils/orderNumber');
@@ -18,6 +19,41 @@ const { ORDER_STATUS, LEDGER_TYPE, LEDGER_REFERENCE_TYPE, TRANSACTION_TYPE, LEDG
 const auditService = require('./audit.service');
 const pdfService = require('./pdf.service');
 const financialService = require('./financial.service');
+const { calculateBonus, normalizeBonusScheme, lineTotalQuantity } = require('../utils/bonus');
+
+const paidUnitsInDeliveryBatch = (orderItem, alreadyDelivered, physicalBatchQty) => {
+  const paidCap = Number(orderItem.quantity) || 0;
+  const paidDeliveredSoFar = Math.min(alreadyDelivered, paidCap);
+  return Math.min(physicalBatchQty, Math.max(0, paidCap - paidDeliveredSoFar));
+};
+
+const buildLineItemsFromPayload = (data, productMap, pharmacy, distributor) => {
+  const scheme = normalizeBonusScheme(pharmacy.bonusScheme);
+  return data.items.map((item) => {
+    const product = productMap[item.productId];
+    const qty = Number(item.quantity);
+    if (Number.isNaN(qty) || qty < 0) throw new ApiError(400, 'Invalid quantity');
+    if (qty < 1) throw new ApiError(400, 'Paid quantity must be at least 1');
+    const autoBonus = calculateBonus(qty, scheme.buyQty, scheme.getQty);
+    let bonusQuantity = autoBonus;
+    if (item.bonusQuantity !== undefined && item.bonusQuantity !== null && item.bonusQuantity !== '') {
+      bonusQuantity = Number(item.bonusQuantity);
+      if (Number.isNaN(bonusQuantity) || bonusQuantity < 0) throw new ApiError(400, 'Invalid bonus quantity');
+    }
+    if (lineTotalQuantity(qty, bonusQuantity) < 1) throw new ApiError(400, 'Invalid line total quantity');
+    return {
+      productId: item.productId,
+      productName: product.name,
+      quantity: qty,
+      bonusScheme: { buyQty: scheme.buyQty, getQty: scheme.getQty },
+      bonusQuantity,
+      tpAtTime: product.tp,
+      castingAtTime: product.casting,
+      distributorDiscount: item.distributorDiscount ?? distributor.discountOnTP ?? 0,
+      clinicDiscount: item.clinicDiscount ?? pharmacy.discountOnTP ?? 0
+    };
+  });
+};
 
 const list = async (companyId, query) => {
   const { page, limit, skip, sort, search } = parsePagination(query);
@@ -42,7 +78,23 @@ const list = async (companyId, query) => {
   return { docs, total, page, limit };
 };
 
+/** Active company users who can be selected as the order’s assigned rep (orders.create UI). */
+const listAssignableReps = async (companyId) => {
+  const docs = await User.find({ companyId, isActive: true })
+    .select('name email role')
+    .sort({ name: 1 })
+    .lean();
+  return docs;
+};
+
 const create = async (companyId, data, reqUser) => {
+  let medicalRepId = reqUser.userId;
+  if (data.medicalRepId) {
+    const rep = await User.findOne({ _id: data.medicalRepId, companyId, isActive: true });
+    if (!rep) throw new ApiError(400, 'Selected user is not an active member of this company');
+    medicalRepId = data.medicalRepId;
+  }
+
   const [pharmacy, distributor] = await Promise.all([
     Pharmacy.findOne({ _id: data.pharmacyId, companyId, isActive: true }),
     Distributor.findOne({ _id: data.distributorId, companyId, isActive: true })
@@ -59,30 +111,26 @@ const create = async (companyId, data, reqUser) => {
 
   const orderNumber = await generateOrderNumber(Order, companyId, 'ORD');
 
-  const items = data.items.map((item) => {
-    const product = productMap[item.productId];
-    return {
-      productId: item.productId,
-      productName: product.name,
-      quantity: item.quantity,
-      tpAtTime: product.tp,
-      castingAtTime: product.casting,
-      distributorDiscount: item.distributorDiscount ?? distributor.discountOnTP ?? 0,
-      clinicDiscount: item.clinicDiscount ?? pharmacy.discountOnTP ?? 0
-    };
-  });
+  const items = buildLineItemsFromPayload(data, productMap, pharmacy, distributor);
 
-  const totalOrderedAmount = roundPKR(
-    items.reduce((sum, i) => sum + i.tpAtTime * i.quantity, 0)
-  );
+  const { items: itemsWithSnap, totals } = financialService.enrichOrderItemsWithFinancialSnapshot(items, distributor);
+  const totalOrderedAmount = totals.totalAmount;
 
   const order = await Order.create({
     companyId, orderNumber,
     pharmacyId: data.pharmacyId,
     doctorId: data.doctorId || null,
     distributorId: data.distributorId,
-    medicalRepId: reqUser.userId,
-    items, totalOrderedAmount,
+    medicalRepId,
+    items: itemsWithSnap,
+    totalOrderedAmount,
+    totalAmount: totals.totalAmount,
+    pharmacyDiscountAmount: totals.pharmacyDiscountAmount,
+    amountAfterPharmacyDiscount: totals.amountAfterPharmacyDiscount,
+    distributorCommissionAmount: totals.distributorCommissionAmount,
+    finalCompanyRevenue: totals.finalCompanyRevenue,
+    totalBonusQuantity: totals.totalBonusQuantity,
+    totalCastingCost: totals.totalCastingCost,
     notes: data.notes,
     createdBy: reqUser.userId
   });
@@ -94,7 +142,7 @@ const create = async (companyId, data, reqUser) => {
 
 const getById = async (companyId, id) => {
   const order = await Order.findOne({ _id: id, companyId })
-    .populate('pharmacyId', 'name city address phone')
+    .populate('pharmacyId', 'name city address phone bonusScheme discountOnTP')
     .populate('doctorId', 'name specialization')
     .populate('distributorId', 'name city discountOnTP commissionPercentOnTP')
     .populate('medicalRepId', 'name')
@@ -129,6 +177,11 @@ const update = async (companyId, id, data, reqUser) => {
   if (data.doctorId !== undefined) {
     order.doctorId = data.doctorId && String(data.doctorId).trim() ? data.doctorId : null;
   }
+  if (data.medicalRepId !== undefined) {
+    const rep = await User.findOne({ _id: data.medicalRepId, companyId, isActive: true });
+    if (!rep) throw new ApiError(400, 'Selected user is not an active member of this company');
+    order.medicalRepId = data.medicalRepId;
+  }
   if (data.notes !== undefined) order.notes = data.notes;
   if (data.items) {
     const [pharmacy, distributor] = await Promise.all([
@@ -140,22 +193,21 @@ const update = async (companyId, id, data, reqUser) => {
     const productMap = {};
     products.forEach((p) => { productMap[p._id.toString()] = p; });
 
-    order.items = data.items.map((item) => {
-      const product = productMap[item.productId];
-      if (!product) throw new ApiError(400, `Product ${item.productId} not found`);
-      return {
-        productId: item.productId,
-        productName: product.name,
-        quantity: item.quantity,
-        deliveredQty: 0,
-        returnedQty: 0,
-        tpAtTime: product.tp,
-        castingAtTime: product.casting,
-        distributorDiscount: item.distributorDiscount ?? distributor?.discountOnTP ?? 0,
-        clinicDiscount: item.clinicDiscount ?? pharmacy?.discountOnTP ?? 0
-      };
-    });
-    order.totalOrderedAmount = roundPKR(order.items.reduce((s, i) => s + i.tpAtTime * i.quantity, 0));
+    const rawItems = buildLineItemsFromPayload(data, productMap, pharmacy, distributor).map((row) => ({
+      ...row,
+      deliveredQty: 0,
+      returnedQty: 0
+    }));
+    const { items: itemsWithSnap, totals } = financialService.enrichOrderItemsWithFinancialSnapshot(rawItems, distributor);
+    order.items = itemsWithSnap;
+    order.totalOrderedAmount = totals.totalAmount;
+    order.totalAmount = totals.totalAmount;
+    order.pharmacyDiscountAmount = totals.pharmacyDiscountAmount;
+    order.amountAfterPharmacyDiscount = totals.amountAfterPharmacyDiscount;
+    order.distributorCommissionAmount = totals.distributorCommissionAmount;
+    order.finalCompanyRevenue = totals.finalCompanyRevenue;
+    order.totalBonusQuantity = totals.totalBonusQuantity;
+    order.totalCastingCost = totals.totalCastingCost;
   }
   order.updatedBy = reqUser.userId;
   await order.save();
@@ -190,7 +242,9 @@ const deliver = async (companyId, orderId, deliveryItems, reqUser) => {
       const orderItem = order.items.find((i) => i.productId.toString() === dItem.productId);
       if (!orderItem) throw new ApiError(400, `Product ${dItem.productId} not in this order`);
 
-      const remaining = orderItem.quantity - orderItem.deliveredQty;
+      const lineMax = lineTotalQuantity(orderItem.quantity, orderItem.bonusQuantity || 0);
+      const alreadyDelivered = orderItem.deliveredQty;
+      const remaining = lineMax - alreadyDelivered;
       if (dItem.quantity > remaining) {
         throw new ApiError(400, `Cannot deliver ${dItem.quantity} of ${orderItem.productName}. Remaining: ${remaining}`);
       }
@@ -200,25 +254,29 @@ const deliver = async (companyId, orderId, deliveryItems, reqUser) => {
         throw new ApiError(400, `Insufficient inventory for ${orderItem.productName}`);
       }
 
-      const snap = financialService.computeLineSnapshot(orderItem, dItem.quantity, distributor);
+      const physicalQty = dItem.quantity;
+      const paidThisBatch = paidUnitsInDeliveryBatch(orderItem, alreadyDelivered, physicalQty);
+      const snap = financialService.computeLineSnapshot(orderItem, paidThisBatch, distributor);
       commissionPctSnapshot = snap.commissionPct;
 
       const avgCostAtTime = inv.avgCostPerUnit;
-      const finalSellingPrice = snap.finalSellingPrice;
-      const profitPerUnit = roundPKR(finalSellingPrice - avgCostAtTime);
-      const totalProfit = roundPKR(profitPerUnit * dItem.quantity);
+      const linePharmacyNet = snap.linePharmacyNet;
+      const lineCost = roundPKR(avgCostAtTime * physicalQty);
+      const totalProfit = roundPKR(linePharmacyNet - lineCost);
+      const finalSellingPrice = physicalQty > 0 ? roundPKR(linePharmacyNet / physicalQty) : 0;
+      const profitPerUnit = physicalQty > 0 ? roundPKR(totalProfit / physicalQty) : 0;
 
       await DistributorInventory.updateOne(
         { _id: inv._id },
-        { $inc: { quantity: -dItem.quantity }, $set: { lastUpdated: new Date() } },
+        { $inc: { quantity: -physicalQty }, $set: { lastUpdated: new Date() } },
         { session }
       );
 
-      orderItem.deliveredQty += dItem.quantity;
+      orderItem.deliveredQty += physicalQty;
 
       deliveryRecordItems.push({
         productId: dItem.productId,
-        quantity: dItem.quantity,
+        quantity: physicalQty,
         avgCostAtTime,
         finalSellingPrice,
         profitPerUnit,
@@ -229,13 +287,13 @@ const deliver = async (companyId, orderId, deliveryItems, reqUser) => {
         companyShare: snap.companyShare
       });
 
-      const lineNet = snap.linePharmacyNet;
+      const lineNet = linePharmacyNet;
       totalAmount += lineNet;
       tpSubtotal += snap.tpLineTotal;
       distributorShareTotal += snap.distributorShare;
       companyShareTotal += snap.companyShare;
-      totalCost += roundPKR(avgCostAtTime * dItem.quantity);
-      totalPacks += dItem.quantity;
+      totalCost += lineCost;
+      totalPacks += physicalQty;
     }
 
     totalAmount = roundPKR(totalAmount);
@@ -245,7 +303,7 @@ const deliver = async (companyId, orderId, deliveryItems, reqUser) => {
 
     const totalProfit = roundPKR(totalAmount - totalCost);
 
-    const allDelivered = order.items.every((i) => i.deliveredQty >= i.quantity);
+    const allDelivered = order.items.every((i) => i.deliveredQty >= lineTotalQuantity(i.quantity, i.bonusQuantity || 0));
     order.status = allDelivered ? ORDER_STATUS.DELIVERED : ORDER_STATUS.PARTIALLY_DELIVERED;
     order.updatedBy = reqUser.userId;
     await order.save({ session });
@@ -481,4 +539,4 @@ const cancel = async (companyId, id, reqUser) => {
   return order;
 };
 
-module.exports = { list, create, getById, update, deliver, returnOrder, cancel };
+module.exports = { list, listAssignableReps, create, getById, update, deliver, returnOrder, cancel };

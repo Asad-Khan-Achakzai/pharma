@@ -24,7 +24,17 @@ import tableStyles from '@core/styles/table.module.css'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
 
-type Pharmacy = { _id: string; name: string; city: string; phone: string; email: string; address: string; discountOnTP: number; isActive: boolean }
+type Pharmacy = {
+  _id: string
+  name: string
+  city: string
+  phone: string
+  email: string
+  address: string
+  discountOnTP: number
+  bonusScheme?: { buyQty?: number; getQty?: number }
+  isActive: boolean
+}
 
 const fuzzyFilter: FilterFn<any> = (row, columnId, value, addMeta) => { const r = rankItem(row.getValue(columnId), value); addMeta({ itemRank: r }); return r.passed }
 const columnHelper = createColumnHelper<Pharmacy>()
@@ -34,7 +44,16 @@ const PharmacyListPage = () => {
   const [globalFilter, setGlobalFilter] = useState('')
   const [open, setOpen] = useState(false)
   const [editItem, setEditItem] = useState<Pharmacy | null>(null)
-  const [form, setForm] = useState({ name: '', address: '', city: '', state: '', phone: '', email: '', discountOnTP: 0 })
+  const [form, setForm] = useState({
+    name: '',
+    address: '',
+    city: '',
+    state: '',
+    phone: '',
+    email: '',
+    discountOnTP: 0,
+    bonusScheme: { buyQty: 0, getQty: 0 }
+  })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -57,8 +76,34 @@ const PharmacyListPage = () => {
   useEffect(() => { fetchData() }, [])
 
   const handleOpen = (item?: Pharmacy) => {
-    if (item) { setEditItem(item); setForm({ name: item.name, address: item.address || '', city: item.city || '', state: '', phone: item.phone || '', email: item.email || '', discountOnTP: item.discountOnTP ?? 0 }) }
-    else { setEditItem(null); setForm({ name: '', address: '', city: '', state: '', phone: '', email: '', discountOnTP: 0 }) }
+    if (item) {
+      setEditItem(item)
+      setForm({
+        name: item.name,
+        address: item.address || '',
+        city: item.city || '',
+        state: '',
+        phone: item.phone || '',
+        email: item.email || '',
+        discountOnTP: item.discountOnTP ?? 0,
+        bonusScheme: {
+          buyQty: item.bonusScheme?.buyQty ?? 0,
+          getQty: item.bonusScheme?.getQty ?? 0
+        }
+      })
+    } else {
+      setEditItem(null)
+      setForm({
+        name: '',
+        address: '',
+        city: '',
+        state: '',
+        phone: '',
+        email: '',
+        discountOnTP: 0,
+        bonusScheme: { buyQty: 0, getQty: 0 }
+      })
+    }
     setOpen(true)
   }
 
@@ -127,6 +172,14 @@ const PharmacyListPage = () => {
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Phone</Typography><Typography>{viewItem.phone || '-'}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Email</Typography><Typography>{viewItem.email || '-'}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Discount on TP</Typography><Typography>{viewItem.discountOnTP ?? 0}%</Typography></Grid>
+              <Grid size={{ xs: 12 }}>
+                <Typography variant='body2' color='text.secondary'>Bonus scheme (Buy X Get Y)</Typography>
+                <Typography>
+                  {(viewItem.bonusScheme?.buyQty ?? 0) > 0 && (viewItem.bonusScheme?.getQty ?? 0) > 0
+                    ? `Buy ${viewItem.bonusScheme?.buyQty} — Get ${viewItem.bonusScheme?.getQty} free`
+                    : 'None'}
+                </Typography>
+              </Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Status</Typography><Chip label={viewItem.isActive ? 'Active' : 'Inactive'} color={viewItem.isActive ? 'success' : 'error'} size='small' variant='tonal' /></Grid>
             </Grid>
           )}
@@ -144,6 +197,43 @@ const PharmacyListPage = () => {
             <Grid size={{ xs: 6 }}><CustomTextField fullWidth label='Phone' value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} /></Grid>
             <Grid size={{ xs: 6 }}><CustomTextField fullWidth label='Email' value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} /></Grid>
             <Grid size={{ xs: 12, sm: 6 }}><CustomTextField fullWidth label='Discount on TP %' type='number' value={form.discountOnTP} onChange={e => setForm(p => ({ ...p, discountOnTP: +e.target.value }))} helperText='Default pharmacy discount applied on trade price for new orders' /></Grid>
+            <Grid size={{ xs: 12 }}>
+              <Typography variant='subtitle2' className='mbe-2'>
+                Bonus scheme (Buy X Get Y)
+              </Typography>
+              <Grid container spacing={3}>
+                <Grid size={{ xs: 6, sm: 4 }}>
+                  <CustomTextField
+                    fullWidth
+                    label='Buy qty (X)'
+                    type='number'
+                    value={form.bonusScheme.buyQty}
+                    onChange={e =>
+                      setForm(p => ({
+                        ...p,
+                        bonusScheme: { ...p.bonusScheme, buyQty: Math.max(0, +e.target.value) }
+                      }))
+                    }
+                    helperText='Set 0 to disable'
+                  />
+                </Grid>
+                <Grid size={{ xs: 6, sm: 4 }}>
+                  <CustomTextField
+                    fullWidth
+                    label='Get qty (Y) free'
+                    type='number'
+                    value={form.bonusScheme.getQty}
+                    onChange={e =>
+                      setForm(p => ({
+                        ...p,
+                        bonusScheme: { ...p.bonusScheme, getQty: Math.max(0, +e.target.value) }
+                      }))
+                    }
+                    helperText='Free units per full X paid'
+                  />
+                </Grid>
+              </Grid>
+            </Grid>
           </Grid>
         </DialogContent>
         <DialogActions><Button onClick={() => setOpen(false)}>Cancel</Button><Button variant='contained' onClick={handleSave} disabled={saving || !isFormValid} startIcon={saving ? <CircularProgress size={20} color='inherit' /> : undefined}>{saving ? 'Saving...' : 'Save'}</Button></DialogActions>
