@@ -4,8 +4,12 @@ const c = require('../../controllers/report.controller');
 const { authenticate } = require('../../middleware/auth');
 const { companyScope } = require('../../middleware/companyScope');
 const { checkPermission } = require('../../middleware/checkPermission');
+const { validateQuery } = require('../../middleware/validate');
+const { visitSummaryQuerySchema, visitByEmployeeQuerySchema } = require('../../validators/planItem.validator');
 
 router.use(authenticate, companyScope);
+router.get('/visit-summary', checkPermission('reports.view'), validateQuery(visitSummaryQuerySchema), c.visitSummary);
+router.get('/visit-by-employee', checkPermission('reports.view'), validateQuery(visitByEmployeeQuerySchema), c.visitByEmployee);
 router.get('/dashboard', checkPermission('dashboard.view'), c.dashboard);
 router.get('/sales', checkPermission('reports.view'), c.sales);
 router.get('/profit', checkPermission('reports.view'), c.profit);

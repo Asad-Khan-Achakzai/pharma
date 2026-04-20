@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Grid from '@mui/material/Grid'
 import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
@@ -31,6 +31,21 @@ const ReportsPage = () => {
   const [repPerf, setRepPerf] = useState<any[]>([])
   const [invVal, setInvVal] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [visitSummary, setVisitSummary] = useState<any>(null)
+  const [visitWeekStart, setVisitWeekStart] = useState('')
+  const [visitWeekEnd, setVisitWeekEnd] = useState('')
+  const [visitLoading, setVisitLoading] = useState(false)
+
+  const defaultVisitWeek = useMemo(() => {
+    const now = new Date()
+    const day = now.getDay()
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1)
+    const mon = new Date(now)
+    mon.setDate(diff)
+    const sun = new Date(mon)
+    sun.setDate(mon.getDate() + 6)
+    return { start: mon.toISOString().slice(0, 10), end: sun.toISOString().slice(0, 10) }
+  }, [])
 
   const fetchReports = async () => {
     setLoading(true)
@@ -60,6 +75,29 @@ const ReportsPage = () => {
   useEffect(() => {
     fetchReports()
   }, [])
+
+  useEffect(() => {
+    setVisitWeekStart(defaultVisitWeek.start)
+    setVisitWeekEnd(defaultVisitWeek.end)
+  }, [defaultVisitWeek])
+
+  const fetchVisitSummary = async () => {
+    if (!visitWeekStart || !visitWeekEnd) return
+    setVisitLoading(true)
+    try {
+      const res = await reportsService.visitSummary({ weekStart: visitWeekStart, weekEnd: visitWeekEnd })
+      setVisitSummary(res.data.data)
+    } catch (err) {
+      showApiError(err, 'Failed to load visit summary')
+    } finally {
+      setVisitLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (visitWeekStart && visitWeekEnd) fetchVisitSummary()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when week range is set
+  }, [visitWeekStart, visitWeekEnd])
 
   return (
     <Grid container spacing={6}>
@@ -110,6 +148,49 @@ const ReportsPage = () => {
                 >
                   {loading ? 'Loading...' : 'Apply filter'}
                 </Button>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          <Grid size={{ xs: 12 }}>
+            <Card>
+              <CardHeader title='Field visit performance' subheader='Planned vs completed (Pacific week)' />
+              <CardContent className='flex flex-col gap-4'>
+                <div className='flex flex-wrap gap-4 items-end'>
+                  <CustomTextField
+                    label='Week start'
+                    type='date'
+                    value={visitWeekStart}
+                    onChange={e => setVisitWeekStart(e.target.value)}
+                    slotProps={{ inputLabel: { shrink: true } }}
+                    size='small'
+                  />
+                  <CustomTextField
+                    label='Week end'
+                    type='date'
+                    value={visitWeekEnd}
+                    onChange={e => setVisitWeekEnd(e.target.value)}
+                    slotProps={{ inputLabel: { shrink: true } }}
+                    size='small'
+                  />
+                  <Button variant='outlined' size='small' onClick={fetchVisitSummary} disabled={visitLoading}>
+                    Refresh
+                  </Button>
+                </div>
+                {visitLoading ? (
+                  <CircularProgress size={28} />
+                ) : visitSummary ? (
+                  <div className='flex flex-wrap gap-6'>
+                    <Typography>Planned (total items): <strong>{visitSummary.totalPlanned}</strong></Typography>
+                    <Typography color='success.main'>Visited: <strong>{visitSummary.totalVisited}</strong></Typography>
+                    <Typography color='warning.main'>Missed: <strong>{visitSummary.totalMissed}</strong></Typography>
+                    <Typography>Pending: <strong>{visitSummary.totalPending}</strong></Typography>
+                    <Typography>Completion: <strong>{visitSummary.completionRate}%</strong></Typography>
+                    <Typography>Unplanned visits: <strong>{visitSummary.unplannedVisits}</strong></Typography>
+                  </div>
+                ) : (
+                  <Typography color='text.secondary'>Set week range to load.</Typography>
+                )}
               </CardContent>
             </Card>
           </Grid>

@@ -39,7 +39,7 @@ const PERMISSION_GROUPS: Record<string, string[]> = {
   payments: ['payments.view', 'payments.create'],
   ledger: ['ledger.view'],
   targets: ['targets.view', 'targets.create', 'targets.edit'],
-  weeklyPlans: ['weeklyPlans.view', 'weeklyPlans.create', 'weeklyPlans.edit'],
+  weeklyPlans: ['weeklyPlans.view', 'weeklyPlans.create', 'weeklyPlans.edit', 'weeklyPlans.markVisit'],
   expenses: ['expenses.view', 'expenses.create', 'expenses.edit', 'expenses.delete'],
   payroll: ['payroll.view', 'payroll.create', 'payroll.edit', 'payroll.pay'],
   reports: ['reports.view'],

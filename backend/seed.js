@@ -87,8 +87,8 @@ async function seed() {
       'dashboard.view', 'products.view', 'distributors.view', 'inventory.view',
       'pharmacies.view', 'pharmacies.create', 'doctors.view', 'doctors.create',
       'orders.view', 'orders.create', 'payments.view', 'payments.create',
-      'ledger.view', 'targets.view', 'weeklyPlans.view', 'weeklyPlans.create',
-      'weeklyPlans.edit', 'reports.view',
+      'ledger.view', 'targets.view',       'weeklyPlans.view', 'weeklyPlans.create',
+      'weeklyPlans.edit', 'weeklyPlans.markVisit', 'reports.view',
       'attendance.mark', 'attendance.view'
     ]
   });
@@ -101,8 +101,8 @@ async function seed() {
       'dashboard.view', 'products.view', 'distributors.view', 'inventory.view',
       'pharmacies.view', 'pharmacies.create', 'doctors.view', 'doctors.create',
       'orders.view', 'orders.create', 'payments.view', 'payments.create',
-      'ledger.view', 'targets.view', 'weeklyPlans.view', 'weeklyPlans.create',
-      'weeklyPlans.edit', 'reports.view',
+      'ledger.view', 'targets.view',       'weeklyPlans.view', 'weeklyPlans.create',
+      'weeklyPlans.edit', 'weeklyPlans.markVisit', 'reports.view',
       'attendance.mark', 'attendance.view'
     ]
   });

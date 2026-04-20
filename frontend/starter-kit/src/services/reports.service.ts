@@ -33,5 +33,10 @@ export const reportsService = {
   profitCosts: (params?: Record<string, string | undefined>) => api.get('/reports/costs', { params }),
   productProfitability: (params?: Record<string, string | undefined>) =>
     api.get('/reports/product-profitability', { params }),
-  profitTrends: (params?: Record<string, string | undefined>) => api.get('/reports/trends', { params })
+  profitTrends: (params?: Record<string, string | undefined>) => api.get('/reports/trends', { params }),
+
+  visitSummary: (params: { weekStart: string; weekEnd: string; employeeId?: string }) =>
+    api.get('/reports/visit-summary', { params }),
+  visitByEmployee: (params: { weekStart: string; weekEnd: string }) =>
+    api.get('/reports/visit-by-employee', { params })
 }

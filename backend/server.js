@@ -3,12 +3,14 @@ const connectDB = require('./src/config/database');
 const env = require('./src/config/env');
 const logger = require('./src/utils/logger');
 const { startAttendanceAutoCheckoutJob } = require('./src/jobs/attendanceAutoCheckout.job');
+const { startPlanItemsMissedJob } = require('./src/jobs/planItemsMissed.job');
 
 const startServer = async () => {
   await connectDB();
 
   if (env.NODE_ENV !== 'test') {
     startAttendanceAutoCheckoutJob();
+    startPlanItemsMissedJob();
   }
 
   app.listen(env.PORT, () => {

@@ -16,6 +16,8 @@ module.exports = {
   Transaction: require('./Transaction'),
   MedRepTarget: require('./MedRepTarget'),
   WeeklyPlan: require('./WeeklyPlan'),
+  PlanItem: require('./PlanItem'),
+  VisitLog: require('./VisitLog'),
   Expense: require('./Expense'),
   Payroll: require('./Payroll'),
   SalaryStructure: require('./SalaryStructure'),

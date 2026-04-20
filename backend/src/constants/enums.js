@@ -95,8 +95,23 @@ const ATTENDANCE_MARKED_BY = {
 
 const WEEKLY_PLAN_STATUS = {
   DRAFT: 'DRAFT',
+  ACTIVE: 'ACTIVE',
+  COMPLETED: 'COMPLETED',
+  /** @deprecated legacy workflow — retained for existing rows */
   SUBMITTED: 'SUBMITTED',
+  /** @deprecated legacy workflow */
   REVIEWED: 'REVIEWED'
+};
+
+const PLAN_ITEM_TYPE = {
+  DOCTOR_VISIT: 'DOCTOR_VISIT',
+  OTHER_TASK: 'OTHER_TASK'
+};
+
+const PLAN_ITEM_STATUS = {
+  PENDING: 'PENDING',
+  VISITED: 'VISITED',
+  MISSED: 'MISSED'
 };
 
 /** Doctor investment / commitment tracking (TP-based achieved sales) */
@@ -122,5 +137,7 @@ module.exports = {
   ATTENDANCE_STATUS,
   ATTENDANCE_MARKED_BY,
   WEEKLY_PLAN_STATUS,
+  PLAN_ITEM_TYPE,
+  PLAN_ITEM_STATUS,
   DOCTOR_ACTIVITY_STATUS
 };

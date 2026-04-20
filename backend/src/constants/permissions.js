@@ -9,7 +9,7 @@ const PERMISSIONS = {
   payments:     ['view', 'create'],
   ledger:       ['view'],
   targets:      ['view', 'create', 'edit'],
-  weeklyPlans:  ['view', 'create', 'edit'],
+  weeklyPlans:  ['view', 'create', 'edit', 'markVisit'],
   expenses:     ['view', 'create', 'edit', 'delete'],
   payroll:      ['view', 'create', 'edit', 'pay'],
   attendance:   ['view', 'mark'],

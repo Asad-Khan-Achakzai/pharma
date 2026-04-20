@@ -1,5 +1,6 @@
 const reportService = require('../services/report.service');
 const profitManagementService = require('../services/profitManagement.service');
+const visitReportService = require('../services/visitReport.service');
 const ApiResponse = require('../utils/ApiResponse');
 const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../middleware/asyncHandler');
@@ -68,7 +69,17 @@ const profitTrends = asyncHandler(async (req, res) => {
   ApiResponse.success(res, await profitManagementService.trends(req.companyId, req.query));
 });
 
+const visitSummary = asyncHandler(async (req, res) => {
+  ApiResponse.success(res, await visitReportService.visitSummary(req.companyId, req.query));
+});
+
+const visitByEmployee = asyncHandler(async (req, res) => {
+  ApiResponse.success(res, await visitReportService.visitByEmployee(req.companyId, req.query));
+});
+
 module.exports = {
+  visitSummary,
+  visitByEmployee,
   dashboard,
   sales,
   profit,

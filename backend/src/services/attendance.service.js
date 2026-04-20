@@ -492,7 +492,34 @@ const monthlySummary = async (companyId, employeeId, monthStr, dailyAllowanceRat
   };
 };
 
+/**
+ * Visit execution: require attendance record with status PRESENT on the same Pacific calendar day as the visit.
+ * @param {import('mongoose').Types.ObjectId|string} companyId
+ * @param {import('mongoose').Types.ObjectId|string} employeeId
+ * @param {Date|string} visitDateInput — Date or YYYY-MM-DD
+ */
+const assertEmployeePresentForVisitDate = async (companyId, employeeId, visitDateInput) => {
+  let ymd;
+  if (typeof visitDateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(visitDateInput)) {
+    ymd = visitDateInput;
+  } else {
+    ymd = pstYmdFromJsDate(new Date(visitDateInput));
+  }
+  const dateDoc = dateDocFromPstYmd(ymd);
+  const rec = await Attendance.findOne({
+    companyId,
+    employeeId,
+    date: dateDoc,
+    isDeleted: { $ne: true }
+  });
+  if (!rec || rec.status !== ATTENDANCE_STATUS.PRESENT) {
+    throw new ApiError(400, 'Attendance must be PRESENT on the visit date to log this visit');
+  }
+  return rec;
+};
+
 module.exports = {
+  assertEmployeePresentForVisitDate,
   monthBounds: (monthStr) => {
     const ymds = pstMonthYmds(monthStr);
     if (!ymds.length) throw new ApiError(400, 'Invalid month (use YYYY-MM)');

@@ -91,9 +91,12 @@ const verticalMenuData = (): MenuItemWithPermission[] => [
   },
   {
     label: 'Weekly Plans',
-    href: '/weekly-plans',
     icon: 'tabler-calendar-week',
-    permission: 'weeklyPlans.view'
+    permission: 'weeklyPlans.view',
+    children: [
+      { label: 'All plans', href: '/weekly-plans' },
+      { label: "Today's visits", href: '/visits/today', permission: 'weeklyPlans.markVisit' }
+    ]
   },
   {
     label: 'Expenses',
