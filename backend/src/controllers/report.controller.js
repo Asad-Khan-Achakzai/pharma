@@ -1,6 +1,7 @@
 const reportService = require('../services/report.service');
 const profitManagementService = require('../services/profitManagement.service');
 const visitReportService = require('../services/visitReport.service');
+const supplierService = require('../services/supplier.service');
 const ApiResponse = require('../utils/ApiResponse');
 const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../middleware/asyncHandler');
@@ -53,6 +54,38 @@ const financialOverview = asyncHandler(async (req, res) => {
   ApiResponse.success(res, await reportService.financialOverview(req.companyId, req.query));
 });
 
+/** Unified cash + receivables + payables snapshot (balance-sheet style; does not change PnL). */
+const financialSummary = asyncHandler(async (req, res) => {
+  ApiResponse.success(res, await reportService.financialSummary(req.companyId));
+});
+
+const financialFlowMonthly = asyncHandler(async (req, res) => {
+  const months = req.query.months ? parseInt(req.query.months, 10) : 12;
+  ApiResponse.success(res, await reportService.financialFlowMonthly(req.companyId, months));
+});
+
+/** Alias names for integrations */
+const pharmacyBalanceReport = asyncHandler(async (req, res) => {
+  ApiResponse.success(res, await reportService.pharmacyBalances(req.companyId, req.query));
+});
+const distributorBalanceReport = asyncHandler(async (req, res) => {
+  ApiResponse.success(res, await reportService.distributorBalances(req.companyId, req.query));
+});
+const supplierBalanceReport = asyncHandler(async (req, res) => {
+  ApiResponse.success(res, await supplierService.supplierBalances(req.companyId));
+});
+
+const patchCompanyCashOpening = asyncHandler(async (req, res) => {
+  if (req.user.role !== 'ADMIN' && req.user.role !== 'SUPER_ADMIN') {
+    throw new ApiError(403, 'Only administrators can update cash opening balance');
+  }
+  ApiResponse.success(
+    res,
+    await reportService.patchCompanyCashOpening(req.companyId, req.body.cashOpeningBalance, req.user),
+    'Cash opening balance updated'
+  );
+});
+
 const profitSummary = asyncHandler(async (req, res) => {
   ApiResponse.success(res, await profitManagementService.summary(req.companyId, req.query));
 });
@@ -97,6 +130,12 @@ module.exports = {
   settlementsPeriod,
   financialCashSummary,
   financialOverview,
+  financialSummary,
+  financialFlowMonthly,
+  pharmacyBalanceReport,
+  distributorBalanceReport,
+  supplierBalanceReport,
+  patchCompanyCashOpening,
   profitSummary,
   profitRevenue,
   profitCosts,

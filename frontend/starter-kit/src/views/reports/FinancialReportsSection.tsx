@@ -26,6 +26,7 @@ import CustomTextField from '@core/components/mui/TextField'
 import { reportsService } from '@/services/reports.service'
 import { pharmaciesService } from '@/services/pharmacies.service'
 import { distributorsService } from '@/services/distributors.service'
+import FinancialPositionSection from '@/views/reports/FinancialPositionSection'
 
 const formatPKR = (v: number) =>
   `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -157,6 +158,10 @@ const FinancialReportsSection = () => {
 
   return (
     <Grid container spacing={4}>
+      <Grid size={{ xs: 12 }}>
+        <FinancialPositionSection />
+      </Grid>
+
       <Grid size={{ xs: 12 }}>
         <Typography variant='body2' color='text.secondary' className='mbe-2'>
           Pharmacy columns reflect invoice receivables (deliveries minus collections/returns). Distributor columns

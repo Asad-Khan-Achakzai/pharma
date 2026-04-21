@@ -102,7 +102,19 @@ const ReportsPage = () => {
   return (
     <Grid container spacing={6}>
       <Grid size={{ xs: 12 }}>
-        <Tabs value={tab} onChange={(_, v) => setTab(v)} className='mbe-4'>
+        <Tabs
+          value={tab}
+          onChange={(_, v) => setTab(v)}
+          className='mbe-4'
+          variant='scrollable'
+          scrollButtons='auto'
+          allowScrollButtonsMobile
+          sx={{
+            borderBottom: 1,
+            borderColor: 'divider',
+            '& .MuiTabs-scrollButtons.Mui-disabled': { opacity: 0.3 }
+          }}
+        >
           <Tab label='Operations' />
           <Tab label='Financial position & receipts' />
           <Tab label='Profit & cost' />

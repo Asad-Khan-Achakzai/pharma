@@ -1,11 +1,20 @@
 const express = require('express');
+const Joi = require('joi');
 const router = express.Router();
 const c = require('../../controllers/report.controller');
 const { authenticate } = require('../../middleware/auth');
 const { companyScope } = require('../../middleware/companyScope');
 const { checkPermission } = require('../../middleware/checkPermission');
-const { validateQuery } = require('../../middleware/validate');
+const { validate, validateQuery } = require('../../middleware/validate');
 const { visitSummaryQuerySchema, visitByEmployeeQuerySchema } = require('../../validators/planItem.validator');
+
+const cashOpeningSchema = Joi.object({
+  cashOpeningBalance: Joi.number().required()
+});
+
+const flowMonthsQuerySchema = Joi.object({
+  months: Joi.number().integer().min(1).max(36).default(12)
+});
 
 router.use(authenticate, companyScope);
 router.get('/visit-summary', checkPermission('reports.view'), validateQuery(visitSummaryQuerySchema), c.visitSummary);
@@ -29,6 +38,14 @@ router.get('/financial/distributors/:id/detail', checkPermission('reports.view')
 router.get('/financial/collections', checkPermission('reports.view'), c.collectionsPeriod);
 router.get('/financial/settlements', checkPermission('reports.view'), c.settlementsPeriod);
 router.get('/financial/cash-summary', checkPermission('reports.view'), c.financialCashSummary);
+
+/** Balance-sheet style summary (cash, receivables, supplier & distributor payables) — does not alter PnL */
+router.get('/financial-summary', checkPermission('reports.view'), c.financialSummary);
+router.get('/financial-flow-monthly', checkPermission('reports.view'), validateQuery(flowMonthsQuerySchema), c.financialFlowMonthly);
+router.get('/pharmacy-balance', checkPermission('reports.view'), c.pharmacyBalanceReport);
+router.get('/distributor-balance', checkPermission('reports.view'), c.distributorBalanceReport);
+router.get('/supplier-balance', checkPermission('reports.view'), c.supplierBalanceReport);
+router.patch('/company-cash-opening', checkPermission('reports.view'), validate(cashOpeningSchema), c.patchCompanyCashOpening);
 
 /** Profit & cost management (transaction-based revenue, auditable cost buckets) */
 router.get('/summary', checkPermission('reports.view'), c.profitSummary);

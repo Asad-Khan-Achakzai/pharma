@@ -12,6 +12,8 @@ const companySchema = new mongoose.Schema(
     email: { type: String, trim: true, lowercase: true },
     logo: { type: String },
     currency: { type: String, default: 'PKR' },
+    /** Starting bank/cash position for implied cash balance (collections + settlements − outflows) */
+    cashOpeningBalance: { type: Number, default: 0 },
     isActive: { type: Boolean, default: true }
   },
   { timestamps: true }

@@ -27,6 +27,18 @@ export const reportsService = {
   financialCashSummary: (params?: { from?: string; to?: string }) =>
     api.get('/reports/financial/cash-summary', { params }),
 
+  /** Balance-sheet style: cash, receivables, supplier & distributor payables, net position */
+  financialSummary: () => api.get('/reports/financial-summary'),
+  financialFlowMonthly: (params?: { months?: number }) =>
+    api.get('/reports/financial-flow-monthly', { params }),
+  supplierBalanceReport: () => api.get('/reports/supplier-balance'),
+  pharmacyBalanceAlias: (params?: { pharmacyId?: string }) =>
+    api.get('/reports/pharmacy-balance', { params }),
+  distributorBalanceAlias: (params?: { distributorId?: string }) =>
+    api.get('/reports/distributor-balance', { params }),
+  patchCompanyCashOpening: (payload: { cashOpeningBalance: number }) =>
+    api.patch('/reports/company-cash-opening', payload),
+
   /** Profit & cost (transaction-based revenue) */
   profitSummary: (params?: Record<string, string | undefined>) => api.get('/reports/summary', { params }),
   profitRevenue: (params?: Record<string, string | undefined>) => api.get('/reports/revenue', { params }),

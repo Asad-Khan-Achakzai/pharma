@@ -22,5 +22,7 @@ module.exports = {
   Payroll: require('./Payroll'),
   SalaryStructure: require('./SalaryStructure'),
   Attendance: require('./Attendance'),
-  AuditLog: require('./AuditLog')
+  AuditLog: require('./AuditLog'),
+  Supplier: require('./Supplier'),
+  SupplierLedger: require('./SupplierLedger')
 };

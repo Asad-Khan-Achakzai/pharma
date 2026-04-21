@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, type MouseEvent } from 'react'
+import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import Box from '@mui/material/Box'
 import Grid from '@mui/material/Grid'
@@ -25,6 +26,7 @@ import CustomTextField from '@core/components/mui/TextField'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { reportsService } from '@/services/reports.service'
 import { attendanceService } from '@/services/attendance.service'
+import { supplierService } from '@/services/supplier.service'
 import { useAuth } from '@/contexts/AuthContext'
 import { isAdminLike } from '@/utils/roleHelpers'
 import ProfitCostDashboardCharts from '@/views/dashboard/ProfitCostDashboardCharts'
@@ -105,7 +107,12 @@ const DashboardPage = () => {
   const textSecondary = 'var(--mui-palette-text-secondary)'
   const canViewReports = hasPermission('reports.view')
   const canViewInventory = hasPermission('inventory.view')
+  const canViewSuppliers = hasPermission('suppliers.view')
   const isAdmin = isAdminLike(user?.role)
+
+  const [supplierWidgetsLoading, setSupplierWidgetsLoading] = useState(false)
+  const [recentSupplierPayments, setRecentSupplierPayments] = useState<any[]>([])
+  const [topSuppliersPayable, setTopSuppliersPayable] = useState<any[]>([])
 
   const loadAttendanceWidgets = useCallback(async () => {
     const canCompany =
@@ -168,6 +175,35 @@ const DashboardPage = () => {
   useEffect(() => {
     loadAttendanceWidgets()
   }, [loadAttendanceWidgets])
+
+  useEffect(() => {
+    if (!canViewSuppliers) return
+    let cancelled = false
+    ;(async () => {
+      setSupplierWidgetsLoading(true)
+      try {
+        const [r, b] = await Promise.all([
+          supplierService.recentPayments({ limit: 8 }),
+          supplierService.balancesSummary()
+        ])
+        if (cancelled) return
+        const rp = (r.data as any)?.data?.docs ?? (r.data as any)?.docs ?? []
+        const rows = (b.data as any)?.data?.rows ?? (b.data as any)?.rows ?? []
+        setRecentSupplierPayments(Array.isArray(rp) ? rp : [])
+        setTopSuppliersPayable(Array.isArray(rows) ? rows.slice(0, 8) : [])
+      } catch {
+        if (!cancelled) {
+          setRecentSupplierPayments([])
+          setTopSuppliersPayable([])
+        }
+      } finally {
+        if (!cancelled) setSupplierWidgetsLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [canViewSuppliers])
 
   const formatPstHm = (iso: string | undefined) => {
     if (!iso) return null
@@ -660,6 +696,104 @@ const DashboardPage = () => {
       {canViewReports && <ProfitCostDashboardCharts />}
 
       {canViewInventory && <InventoryDashboardCharts />}
+
+      {canViewSuppliers && (
+        <Grid size={{ xs: 12 }}>
+          <Grid container spacing={4}>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Card>
+                <CardHeader title='Recent supplier payments' subheader='Latest PAYMENT entries across suppliers' />
+                <CardContent>
+                  {supplierWidgetsLoading ? (
+                    <Skeleton variant='rounded' width='100%' height={120} animation='wave' />
+                  ) : recentSupplierPayments.length === 0 ? (
+                    <Typography variant='body2' color='text.secondary'>
+                      No supplier payments yet.
+                    </Typography>
+                  ) : (
+                    <TableContainer component={Paper} variant='outlined'>
+                      <Table size='small'>
+                        <TableHead>
+                          <TableRow>
+                            <TableCell>Date</TableCell>
+                            <TableCell>Supplier</TableCell>
+                            <TableCell align='right'>Amount</TableCell>
+                            <TableCell>Method</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {recentSupplierPayments.map((row: any) => {
+                            const sid = row.supplierId
+                            const sname =
+                              typeof sid === 'object' && sid?.name ? sid.name : 'Supplier'
+                            const href =
+                              typeof sid === 'object' && sid?._id ? `/suppliers/${sid._id}` : '#'
+                            return (
+                              <TableRow key={String(row._id)}>
+                                <TableCell>
+                                  {row.date ? new Date(row.date).toLocaleDateString('en-GB') : '—'}
+                                </TableCell>
+                                <TableCell>
+                                  {href !== '#' ? (
+                                    <Link href={href} className='text-primary'>
+                                      {sname}
+                                    </Link>
+                                  ) : (
+                                    sname
+                                  )}
+                                </TableCell>
+                                <TableCell align='right'>{formatPKR(row.amount)}</TableCell>
+                                <TableCell>{row.paymentMethod || '—'}</TableCell>
+                              </TableRow>
+                            )
+                          })}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  )}
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Card>
+                <CardHeader title='Top suppliers by payable' subheader='Opening + casting purchases − payments' />
+                <CardContent>
+                  {supplierWidgetsLoading ? (
+                    <Skeleton variant='rounded' width='100%' height={120} animation='wave' />
+                  ) : topSuppliersPayable.length === 0 ? (
+                    <Typography variant='body2' color='text.secondary'>
+                      No supplier balances loaded.
+                    </Typography>
+                  ) : (
+                    <TableContainer component={Paper} variant='outlined'>
+                      <Table size='small'>
+                        <TableHead>
+                          <TableRow>
+                            <TableCell>Supplier</TableCell>
+                            <TableCell align='right'>Payable</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {topSuppliersPayable.map((row: any) => (
+                            <TableRow key={String(row.supplierId)}>
+                              <TableCell>
+                                <Link href={`/suppliers/${row.supplierId}`} className='text-primary'>
+                                  {row.name}
+                                </Link>
+                              </TableCell>
+                              <TableCell align='right'>{formatPKR(row.payable)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  )}
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+        </Grid>
+      )}
 
       {dashboardDataLoading
         ? Array.from({ length: 6 }).map((_, i) => (

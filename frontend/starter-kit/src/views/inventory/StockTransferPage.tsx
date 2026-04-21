@@ -36,6 +36,8 @@ import TablePaginationComponent from '@components/TablePaginationComponent'
 import { inventoryService } from '@/services/inventory.service'
 import { distributorsService } from '@/services/distributors.service'
 import { productsService } from '@/services/products.service'
+import { supplierService } from '@/services/supplier.service'
+import { normalizeDocs } from '@/utils/apiList'
 
 import tableStyles from '@core/styles/table.module.css'
 
@@ -50,6 +52,7 @@ const formatDate = (d: string) => {
 
 type Transfer = {
   _id: string
+  supplierId?: any
   fromDistributorId?: any
   distributorId: any
   items: { productId: any; quantity: number; castingAtTime: number; shippingCostPerUnit: number }[]
@@ -70,11 +73,14 @@ const columnHelper = createColumnHelper<Transfer>()
 const StockTransferPage = () => {
   const { hasPermission } = useAuth()
   const canTransfer = hasPermission('inventory.transfer')
+  const canPickSupplier = hasPermission('suppliers.view')
   const [distributors, setDistributors] = useState<any[]>([])
+  const [suppliers, setSuppliers] = useState<any[]>([])
   const [products, setProducts] = useState<any[]>([])
   const [transferMode, setTransferMode] = useState<'company' | 'between'>('company')
   const [fromDistributorId, setFromDistributorId] = useState('')
   const [distributorId, setDistributorId] = useState('')
+  const [supplierId, setSupplierId] = useState('')
   const [items, setItems] = useState([{ productId: '', quantity: 1 }])
   const [totalShippingCost, setTotalShippingCost] = useState(0)
   const [saving, setSaving] = useState(false)
@@ -97,9 +103,14 @@ const StockTransferPage = () => {
   const fetchLookups = async () => {
     setLoadingData(true)
     try {
-      const [d, p] = await Promise.all([distributorsService.list({ limit: 100 }), productsService.list({ limit: 100 })])
+      const [d, p, s] = await Promise.all([
+        distributorsService.list({ limit: 100 }),
+        productsService.list({ limit: 100 }),
+        canPickSupplier ? supplierService.list({ limit: '100', isActive: 'true' }) : Promise.resolve({ data: { docs: [] as any[] } })
+      ])
       setDistributors(d.data.data || [])
       setProducts(p.data.data || [])
+      setSuppliers(normalizeDocs(s))
     } catch (err) { showApiError(err, 'Failed to load data') }
     finally { setLoadingData(false) }
   }
@@ -170,7 +181,7 @@ const StockTransferPage = () => {
       const payload =
         transferMode === 'between'
           ? { distributorId, fromDistributorId, items, totalShippingCost }
-          : { distributorId, items, totalShippingCost }
+          : { distributorId, items, totalShippingCost, ...(supplierId ? { supplierId } : {}) }
       await inventoryService.transfer(payload)
       showSuccess('Stock transferred successfully')
       setItems([{ productId: '', quantity: 1 }])
@@ -258,6 +269,7 @@ const StockTransferPage = () => {
                       setTransferMode(v)
                       setFromDistributorId('')
                       setDistributorId('')
+                      setSupplierId('')
                     }}
                   >
                     <ToggleButton value='company'>From company to distributor</ToggleButton>
@@ -299,6 +311,25 @@ const StockTransferPage = () => {
                       .map(d => <MenuItem key={d._id} value={d._id}>{d.name}</MenuItem>)}
                   </CustomTextField>
                 </Grid>
+                {transferMode === 'company' && canPickSupplier && (
+                  <Grid size={{ xs: 12, md: 6 }}>
+                    <CustomTextField
+                      select
+                      fullWidth
+                      label='Supplier (factory)'
+                      value={supplierId}
+                      onChange={e => setSupplierId(e.target.value)}
+                      helperText='Optional. Records supplier PURCHASE (casting × qty) as payable — not an expense.'
+                    >
+                      <MenuItem value=''>None</MenuItem>
+                      {suppliers.map((x: any) => (
+                        <MenuItem key={x._id} value={x._id}>
+                          {x.name}
+                        </MenuItem>
+                      ))}
+                    </CustomTextField>
+                  </Grid>
+                )}
                 <Grid size={{ xs: 12, md: 6 }}>
                   <CustomTextField
                     fullWidth
@@ -425,6 +456,14 @@ const StockTransferPage = () => {
                   {viewItem.distributorId?.name || '-'}
                 </Typography>
               </Grid>
+              {viewItem.supplierId && (
+                <Grid size={{ xs: 12 }}>
+                  <Typography variant='body2' color='text.secondary'>Supplier (purchase recorded)</Typography>
+                  <Typography fontWeight={500}>
+                    {typeof viewItem.supplierId === 'object' ? viewItem.supplierId?.name : viewItem.supplierId}
+                  </Typography>
+                </Grid>
+              )}
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Date</Typography><Typography>{formatDate(viewItem.createdAt)}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Total Shipping</Typography><Typography>{formatPKR(viewItem.totalShippingCost)}</Typography></Grid>
               <Grid size={{ xs: 6 }}><Typography variant='body2' color='text.secondary'>Created By</Typography><Typography>{viewItem.createdBy?.name || '-'}</Typography></Grid>

@@ -14,6 +14,8 @@ const stockTransferItemSchema = new mongoose.Schema(
 const stockTransferSchema = new mongoose.Schema(
   {
     companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', required: true },
+    /** When issuing from company: optional factory — creates supplier PURCHASE (casting × qty), not an expense */
+    supplierId: { type: mongoose.Schema.Types.ObjectId, ref: 'Supplier', default: null },
     /** When set, stock is moved from this distributor to `distributorId`. When null/omitted, stock is issued from company to `distributorId`. */
     fromDistributorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Distributor', default: null },
     distributorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Distributor', required: true },

@@ -7,6 +7,7 @@ const ApiError = require('../utils/ApiError');
 const { roundPKR } = require('../utils/currency');
 const { parsePagination } = require('../utils/pagination');
 const auditService = require('./audit.service');
+const supplierService = require('./supplier.service');
 
 const getAll = async (companyId, query) => {
   const { page, limit, skip, sort } = parsePagination(query);
@@ -137,7 +138,7 @@ const mergeIntoDestination = async ({
   await inv.save({ session });
 };
 
-const transferFromCompany = async (companyId, distributorId, items, totalShippingCost, notes, reqUser) => {
+const transferFromCompany = async (companyId, distributorId, items, totalShippingCost, notes, reqUser, supplierId) => {
   const distributor = await Distributor.findOne({ _id: distributorId, companyId, isActive: true });
   if (!distributor) throw new ApiError(404, 'Distributor not found');
 
@@ -178,6 +179,7 @@ const transferFromCompany = async (companyId, distributorId, items, totalShippin
     const stockTransfer = await StockTransfer.create(
       [{
         companyId,
+        supplierId: supplierId && String(supplierId).trim() ? supplierId : null,
         fromDistributorId: null,
         distributorId,
         items: transferItems,
@@ -187,6 +189,18 @@ const transferFromCompany = async (companyId, distributorId, items, totalShippin
       }],
       { session }
     );
+
+    if (supplierId && String(supplierId).trim()) {
+      await supplierService.recordPurchaseFromStockTransfer({
+        session,
+        companyId,
+        supplierId,
+        stockTransferId: stockTransfer[0]._id,
+        items,
+        productMap,
+        reqUser
+      });
+    }
 
     await session.commitTransaction();
 
@@ -315,7 +329,7 @@ const transferBetweenDistributors = async (
 };
 
 const transfer = async (companyId, data, reqUser) => {
-  const { distributorId, items, totalShippingCost, notes } = data;
+  const { distributorId, items, totalShippingCost, notes, supplierId } = data;
   const fromRaw = data.fromDistributorId;
   const fromId = fromRaw && String(fromRaw).trim() ? fromRaw : null;
 
@@ -331,7 +345,7 @@ const transfer = async (companyId, data, reqUser) => {
     );
   }
 
-  return transferFromCompany(companyId, distributorId, items, totalShippingCost, notes, reqUser);
+  return transferFromCompany(companyId, distributorId, items, totalShippingCost, notes, reqUser, supplierId);
 };
 
 const getTransfers = async (companyId, query) => {
@@ -341,6 +355,7 @@ const getTransfers = async (companyId, query) => {
 
   const [docs, total] = await Promise.all([
     StockTransfer.find(filter)
+      .populate('supplierId', 'name')
       .populate('fromDistributorId', 'name')
       .populate('distributorId', 'name')
       .populate('items.productId', 'name')

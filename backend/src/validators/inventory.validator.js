@@ -2,6 +2,8 @@ const Joi = require('joi');
 
 const transferSchema = Joi.object({
   distributorId: Joi.string().required(),
+  /** Factory / supplier — when issuing from company, creates supplier PURCHASE (casting × qty); not an expense */
+  supplierId: Joi.string().optional().allow(null, ''),
   /** When set, stock moves from this distributor to `distributorId` (distributor-to-distributor). */
   fromDistributorId: Joi.string().optional().allow(null, ''),
   items: Joi.array().items(

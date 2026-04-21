@@ -11,9 +11,14 @@ const Collection = require('../models/Collection');
 const Settlement = require('../models/Settlement');
 const Pharmacy = require('../models/Pharmacy');
 const Distributor = require('../models/Distributor');
+const Company = require('../models/Company');
+const SupplierLedger = require('../models/SupplierLedger');
 const { roundPKR } = require('../utils/currency');
-const { LEDGER_ENTITY_TYPE, SETTLEMENT_DIRECTION } = require('../constants/enums');
+const { LEDGER_ENTITY_TYPE, SETTLEMENT_DIRECTION, SUPPLIER_LEDGER_TYPE } = require('../constants/enums');
 const financialService = require('./financial.service');
+const supplierService = require('./supplier.service');
+const auditService = require('./audit.service');
+const ApiError = require('../utils/ApiError');
 
 const objectId = (id) => new mongoose.Types.ObjectId(id);
 
@@ -697,6 +702,185 @@ const financialOverview = async (companyId, query = {}) => {
   return out;
 };
 
+/**
+ * Implied bank/cash position: opening + collections + D→C settlements − C→D − expenses − supplier payments.
+ * Not double-counting inventory casting (supplier PURCHASE is liability only).
+ */
+const computeImpliedCashBalance = async (companyId) => {
+  const cid = objectId(companyId);
+  const company = await Company.findById(cid).select('cashOpeningBalance').lean();
+  const opening = roundPKR(company?.cashOpeningBalance || 0);
+
+  const [cCol, cSet, cExp, cSup] = await Promise.all([
+    Collection.aggregate([
+      { $match: { companyId: cid, isDeleted: nd } },
+      { $group: { _id: null, t: { $sum: '$amount' } } }
+    ]),
+    Settlement.aggregate([
+      { $match: { companyId: cid, isDeleted: nd } },
+      { $group: { _id: '$direction', t: { $sum: '$amount' } } }
+    ]),
+    Expense.aggregate([{ $match: { companyId: cid, isDeleted: nd } }, { $group: { _id: null, t: { $sum: '$amount' } } }]),
+    SupplierLedger.aggregate([
+      { $match: { companyId: cid, type: SUPPLIER_LEDGER_TYPE.PAYMENT, isDeleted: nd } },
+      { $group: { _id: null, t: { $sum: '$amount' } } }
+    ])
+  ]);
+
+  const totalPharmacyCollections = roundPKR(cCol[0]?.t || 0);
+  const settlementsInFromDistributors = roundPKR(
+    cSet.find((x) => x._id === SETTLEMENT_DIRECTION.DISTRIBUTOR_TO_COMPANY)?.t || 0
+  );
+  const settlementsOutToDistributors = roundPKR(
+    cSet.find((x) => x._id === SETTLEMENT_DIRECTION.COMPANY_TO_DISTRIBUTOR)?.t || 0
+  );
+  const totalOperatingExpenses = roundPKR(cExp[0]?.t || 0);
+  const supplierPaymentsCashOut = roundPKR(cSup[0]?.t || 0);
+
+  const cashBalance = roundPKR(
+    opening +
+      totalPharmacyCollections +
+      settlementsInFromDistributors -
+      settlementsOutToDistributors -
+      totalOperatingExpenses -
+      supplierPaymentsCashOut
+  );
+
+  return {
+    cashOpeningBalance: opening,
+    cashBalance,
+    components: {
+      totalPharmacyCollections,
+      settlementsInFromDistributors,
+      settlementsOutToDistributors,
+      totalOperatingExpenses,
+      supplierPaymentsCashOut
+    },
+    help: 'Payroll posts through Expense. Supplier PURCHASE lines do not affect cash; only PAYMENT does.'
+  };
+};
+
+/**
+ * Unified balance-sheet-style snapshot. Distributor payable = commission owed to distributors (existing clearing).
+ */
+const financialSummary = async (companyId) => {
+  const [cashData, pharm, dist, sup] = await Promise.all([
+    computeImpliedCashBalance(companyId),
+    pharmacyBalances(companyId),
+    distributorBalances(companyId),
+    supplierService.supplierBalances(companyId)
+  ]);
+
+  const totalPharmacyReceivable = pharm.totals.totalReceivable;
+  const totalSupplierPayable = sup.totals.totalNetPayable;
+  const totalDistributorPayable = dist.totals.sumCommissionPayableByCompanyToDistributors;
+
+  const netPosition = roundPKR(
+    cashData.cashBalance + totalPharmacyReceivable - totalSupplierPayable - totalDistributorPayable
+  );
+
+  return {
+    generatedAt: new Date().toISOString(),
+    cashBalance: cashData.cashBalance,
+    cashOpeningBalance: cashData.cashOpeningBalance,
+    cashComponents: cashData.components,
+    totalPharmacyReceivable,
+    totalSupplierPayable,
+    totalDistributorPayable,
+    netPosition,
+    notes: [
+      'Supplier PURCHASE increases payable only (not PnL). Delivery profit unchanged.',
+      'Pharmacy receivables from ledger. Distributor payable = commission owed (sumCommissionPayableByCompanyToDistributors).',
+      'Cash is implied from movements + optional company.cashOpeningBalance.'
+    ],
+    pharmacyTotals: pharm.totals,
+    distributorTotals: dist.totals,
+    supplierTotals: sup.totals
+  };
+};
+
+/** Monthly inflow vs outflow for charts (last N calendar months including current). */
+const financialFlowMonthly = async (companyId, months = 12) => {
+  const n = Math.min(36, Math.max(1, parseInt(months, 10) || 12));
+  const cid = objectId(companyId);
+  const end = new Date();
+  const start = new Date(end.getFullYear(), end.getMonth() - (n - 1), 1);
+  start.setHours(0, 0, 0, 0);
+
+  const dateRange = { $gte: start, $lte: end };
+
+  const monthKeys = [];
+  {
+    const cur = new Date(start);
+    while (cur <= end) {
+      monthKeys.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}`);
+      cur.setMonth(cur.getMonth() + 1);
+    }
+  }
+
+  const [cols, sets, exps, sups] = await Promise.all([
+    Collection.aggregate([
+      { $match: { companyId: cid, isDeleted: nd, date: dateRange } },
+      { $group: { _id: { $dateToString: { format: '%Y-%m', date: '$date' } }, t: { $sum: '$amount' } } }
+    ]),
+    Settlement.aggregate([
+      { $match: { companyId: cid, isDeleted: nd, date: dateRange } },
+      {
+        $group: {
+          _id: { ym: { $dateToString: { format: '%Y-%m', date: '$date' } }, direction: '$direction' },
+          t: { $sum: '$amount' }
+        }
+      }
+    ]),
+    Expense.aggregate([
+      { $match: { companyId: cid, isDeleted: nd, date: dateRange } },
+      { $group: { _id: { $dateToString: { format: '%Y-%m', date: '$date' } }, t: { $sum: '$amount' } } }
+    ]),
+    SupplierLedger.aggregate([
+      { $match: { companyId: cid, type: SUPPLIER_LEDGER_TYPE.PAYMENT, isDeleted: nd, date: dateRange } },
+      { $group: { _id: { $dateToString: { format: '%Y-%m', date: '$date' } }, t: { $sum: '$amount' } } }
+    ])
+  ]);
+
+  const setMap = new Map();
+  for (const r of sets) {
+    const k = r._id.ym;
+    if (!setMap.has(k)) setMap.set(k, { d2c: 0, c2d: 0 });
+    const o = setMap.get(k);
+    if (r._id.direction === SETTLEMENT_DIRECTION.DISTRIBUTOR_TO_COMPANY) o.d2c += roundPKR(r.t);
+    if (r._id.direction === SETTLEMENT_DIRECTION.COMPANY_TO_DISTRIBUTOR) o.c2d += roundPKR(r.t);
+  }
+
+  const series = monthKeys.map((ym) => {
+    const col = cols.find((c) => c._id === ym)?.t || 0;
+    const s = setMap.get(ym) || { d2c: 0, c2d: 0 };
+    const exp = exps.find((e) => e._id === ym)?.t || 0;
+    const sup = sups.find((x) => x._id === ym)?.t || 0;
+    const inflow = roundPKR(col + s.d2c);
+    const outflow = roundPKR(s.c2d + exp + sup);
+    return { month: ym, inflow, outflow, net: roundPKR(inflow - outflow) };
+  });
+
+  return { monthKeys, series };
+};
+
+const patchCompanyCashOpening = async (companyId, cashOpeningBalance, reqUser) => {
+  const c = await Company.findById(objectId(companyId));
+  if (!c) throw new ApiError(404, 'Company not found');
+  const before = c.toObject();
+  c.cashOpeningBalance = roundPKR(cashOpeningBalance ?? 0);
+  await c.save();
+  await auditService.log({
+    companyId,
+    userId: reqUser.userId,
+    action: 'company.cashOpeningBalance',
+    entityType: 'Company',
+    entityId: c._id,
+    changes: { before, after: c.toObject() }
+  });
+  return c;
+};
+
 module.exports = {
   dashboard,
   sales,
@@ -714,5 +898,9 @@ module.exports = {
   collectionsPeriod,
   settlementsPeriod,
   financialCashSummary,
-  financialOverview
+  financialOverview,
+  computeImpliedCashBalance,
+  financialSummary,
+  financialFlowMonthly,
+  patchCompanyCashOpening
 };

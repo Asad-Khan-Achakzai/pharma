@@ -34,6 +34,12 @@ const verticalMenuData = (): MenuItemWithPermission[] => [
     permission: 'distributors.view'
   },
   {
+    label: 'Suppliers',
+    href: '/suppliers/list',
+    icon: 'tabler-building-factory',
+    permission: 'suppliers.view'
+  },
+  {
     label: 'Inventory',
     icon: 'tabler-packages',
     permission: 'inventory.view',

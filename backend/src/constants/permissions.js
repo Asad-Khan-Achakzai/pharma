@@ -14,6 +14,7 @@ const PERMISSIONS = {
   payroll:      ['view', 'create', 'edit', 'pay'],
   attendance:   ['view', 'mark'],
   reports:      ['view'],
+  suppliers:    ['view', 'manage'],
   users:        ['view', 'create', 'edit', 'delete']
 };
 
