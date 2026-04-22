@@ -9,7 +9,10 @@ import type { BoxProps } from '@mui/material/Box'
 import type { Props } from 'react-apexcharts'
 
 // Component Imports
-import ReactApexcharts from '@/libs/ApexCharts'
+import dynamic from 'next/dynamic'
+
+/** Load chart runtime once from a single dynamic boundary (avoids nested dynamic import chain). */
+const ReactApexcharts = dynamic(() => import('react-apexcharts'), { ssr: false })
 
 type ApexChartWrapperProps = Props & {
   boxProps?: BoxProps

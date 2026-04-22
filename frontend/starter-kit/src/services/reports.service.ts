@@ -1,7 +1,7 @@
 import api from './api'
 
 export const reportsService = {
-  dashboard: () => api.get('/reports/dashboard'),
+  dashboard: (config?: { signal?: AbortSignal }) => api.get('/reports/dashboard', config),
   sales: (params?: any) => api.get('/reports/sales', { params }),
   profit: (params?: any) => api.get('/reports/profit', { params }),
   expenses: (params?: any) => api.get('/reports/expenses', { params }),

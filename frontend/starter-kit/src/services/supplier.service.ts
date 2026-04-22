@@ -9,7 +9,7 @@ function parseFilenameFromDisposition(cd: string | undefined, fallback: string) 
 
 export const supplierService = {
   list: (params?: Record<string, string | undefined>) => api.get('/suppliers', { params }),
-  balancesSummary: () => api.get('/suppliers/balances/summary'),
+  balancesSummary: (config?: { signal?: AbortSignal }) => api.get('/suppliers/balances/summary', config),
   getById: (id: string) => api.get(`/suppliers/${id}`),
   create: (data: Record<string, unknown>) => api.post('/suppliers', data),
   update: (id: string, data: Record<string, unknown>) => api.put(`/suppliers/${id}`, data),
@@ -17,10 +17,13 @@ export const supplierService = {
   ledger: (id: string, params?: Record<string, string | undefined>) => api.get(`/suppliers/${id}/ledger`, { params }),
   balance: (id: string) => api.get(`/suppliers/${id}/balance`),
   listPayments: (id: string) => api.get(`/suppliers/${id}/payments`),
-  recentPayments: (params?: { limit?: number }) =>
-    api.get('/suppliers/payments/recent', {
-      params: params?.limit != null ? { limit: params.limit } : undefined
-    }),
+  recentPayments: (params?: { limit?: number; signal?: AbortSignal }) => {
+    const { signal, limit } = params ?? {}
+    return api.get('/suppliers/payments/recent', {
+      params: limit != null ? { limit } : undefined,
+      signal
+    })
+  },
   downloadPaymentInvoice: async (ledgerId: string) => {
     const res = await api.get(`/suppliers/payments/${ledgerId}/invoice`, { responseType: 'blob' })
     const cd = res.headers['content-disposition'] as string | undefined

@@ -1,91 +1,70 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo, type MouseEvent } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, type MouseEvent } from 'react'
 import Link from 'next/link'
-import dynamic from 'next/dynamic'
 import Box from '@mui/material/Box'
 import Grid from '@mui/material/Grid'
-import Card from '@mui/material/Card'
-import CardHeader from '@mui/material/CardHeader'
-import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
-import Chip from '@mui/material/Chip'
-import Table from '@mui/material/Table'
-import TableBody from '@mui/material/TableBody'
-import TableCell from '@mui/material/TableCell'
-import TableContainer from '@mui/material/TableContainer'
-import TableHead from '@mui/material/TableHead'
-import TableRow from '@mui/material/TableRow'
-import Paper from '@mui/material/Paper'
 import Skeleton from '@mui/material/Skeleton'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import type { ApexOptions } from 'apexcharts'
-import CustomTextField from '@core/components/mui/TextField'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { reportsService } from '@/services/reports.service'
 import { attendanceService } from '@/services/attendance.service'
 import { supplierService } from '@/services/supplier.service'
 import { useAuth } from '@/contexts/AuthContext'
 import { isAdminLike } from '@/utils/roleHelpers'
-import ProfitCostDashboardCharts from '@/views/dashboard/ProfitCostDashboardCharts'
-import InventoryDashboardCharts from '@/views/dashboard/InventoryDashboardCharts'
 import ConfirmDialog from '@/components/dialogs/ConfirmDialog'
+import { isAxiosError } from 'axios'
+import DashboardKPISection from '@/views/dashboard/DashboardKPISection'
+import DashboardChartsSection from '@/views/dashboard/DashboardChartsSection'
+import DashboardSupplierSection from '@/views/dashboard/DashboardSupplierSection'
+import DashboardAttendanceSection from '@/views/dashboard/DashboardAttendanceSection'
+import type { KpiItem, TodayBoard, TodayEmployee } from '@/views/dashboard/dashboard.types'
 
-const AppReactApexCharts = dynamic(() => import('@/libs/styles/AppReactApexCharts'), { ssr: false })
+function isAbortError(e: unknown): boolean {
+  return isAxiosError(e) && e.code === 'ERR_CANCELED'
+}
 
 const formatPKR = (v: number) => `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
-type TodayEmployee = {
-  employeeId: string
-  name: string
-  status: string
-  checkInTime: string | null
-  checkOutTime?: string | null
-  hasCheckedOut?: boolean
+const donutColors = ['#00d4bd', '#ffa1a1', '#826bf8', '#32baff']
+
+/** Set `window.__DASH_DEBUG__ = true` in the browser console to enable logs outside development. */
+function dashDebugEnabled(): boolean {
+  if (typeof window === 'undefined') return false
+  return (
+    process.env.NODE_ENV === 'development' ||
+    (window as unknown as { __DASH_DEBUG__?: boolean }).__DASH_DEBUG__ === true
+  )
 }
 
-type TodayBoard = {
-  employees: TodayEmployee[]
-  summary: { present: number; notMarked: number; totalEmployees: number }
-  distribution: Record<string, number>
-}
-
-const statusDisplay = (s: string) => {
-  switch (s) {
-    case 'PRESENT':
-      return 'Present'
-    case 'HALF_DAY':
-      return 'Half-Day'
-    case 'ABSENT':
-      return 'Absent'
-    case 'LEAVE':
-      return 'Leave'
-    case 'NOT_MARKED':
-      return 'Not marked'
-    default:
-      return s
+function dashLog(phase: string, data?: Record<string, unknown>) {
+  if (!dashDebugEnabled()) return
+  const ms = Math.round(performance.now())
+  if (data && Object.keys(data).length > 0) {
+    console.log(`[Dashboard +${ms}ms] ${phase}`, data)
+  } else {
+    console.log(`[Dashboard +${ms}ms] ${phase}`)
   }
 }
 
-const statusChipColor = (s: string): 'success' | 'warning' | 'error' | 'default' | 'info' => {
-  if (s === 'PRESENT') return 'success'
-  if (s === 'HALF_DAY') return 'info'
-  if (s === 'LEAVE') return 'default'
-  if (s === 'ABSENT' || s === 'NOT_MARKED') return 'error'
-  return 'default'
-}
-
-const donutColors = ['#00d4bd', '#ffa1a1', '#826bf8', '#32baff']
-
 const DashboardPage = () => {
-  const { user, hasPermission } = useAuth()
-  /** Reps often have no attendance.* strings in DB; admins bypass hasPermission anyway */
-  const showCompanyAttendance =
-    isAdminLike(user?.role) || user?.role === 'MEDICAL_REP' || hasPermission('attendance.view')
-  const showMyAttendance =
-    isAdminLike(user?.role) || user?.role === 'MEDICAL_REP' || hasPermission('attendance.mark')
+  const { user } = useAuth()
+
+  /** Stable booleans — do not depend on hasPermission() identity */
+  const attendanceScope = useMemo(() => {
+    if (!user) return { team: false, mine: false }
+    const r = user.role
+    if (r === 'ADMIN' || r === 'SUPER_ADMIN' || r === 'MEDICAL_REP') return { team: true, mine: true }
+    const p = user.permissions || []
+    return { team: p.includes('attendance.view'), mine: p.includes('attendance.mark') }
+  }, [user])
+
+  const showCompanyAttendance = attendanceScope.team
+  const showMyAttendance = attendanceScope.mine
   const [data, setData] = useState<any>(null)
   const [loadError, setLoadError] = useState(false)
   const [dashboardDataLoading, setDashboardDataLoading] = useState(true)
@@ -105,105 +84,344 @@ const DashboardPage = () => {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [filterStatus, setFilterStatus] = useState<string>('')
   const textSecondary = 'var(--mui-palette-text-secondary)'
-  const canViewReports = hasPermission('reports.view')
-  const canViewInventory = hasPermission('inventory.view')
-  const canViewSuppliers = hasPermission('suppliers.view')
+  const canViewReports = useMemo(() => {
+    if (!user) return false
+    if (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') return true
+    return user.permissions.includes('reports.view')
+  }, [user])
+
+  const canViewInventory = useMemo(() => {
+    if (!user) return false
+    if (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') return true
+    return user.permissions.includes('inventory.view')
+  }, [user])
+
+  /** Stable for effects — mirrors hasPermission('suppliers.view') */
+  const canViewSuppliers = useMemo(() => {
+    if (!user) return false
+    if (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') return true
+    return user.permissions.includes('suppliers.view')
+  }, [user])
+
   const isAdmin = isAdminLike(user?.role)
 
-  const [supplierWidgetsLoading, setSupplierWidgetsLoading] = useState(false)
+  /**
+   * Profit/inventory charts use `next/dynamic` with local skeletons; supplier cards use
+   * `supplierPaymentsLoading` / `supplierPayablesLoading` (separate fetches, same pattern as attendance).
+   */
+
+  const [supplierPaymentsLoading, setSupplierPaymentsLoading] = useState(true)
+  const [supplierPayablesLoading, setSupplierPayablesLoading] = useState(true)
   const [recentSupplierPayments, setRecentSupplierPayments] = useState<any[]>([])
   const [topSuppliersPayable, setTopSuppliersPayable] = useState<any[]>([])
+  /**
+   * Non-critical widgets are mounted only after critical KPIs render + main thread is idle.
+   * This improves TTI by reducing first-paint CPU and request fan-out.
+   */
+  const [nonCriticalReady, setNonCriticalReady] = useState(false)
 
-  const loadAttendanceWidgets = useCallback(async () => {
-    const canCompany =
-      isAdminLike(user?.role) || user?.role === 'MEDICAL_REP' || hasPermission('attendance.view')
-    const canMine =
-      isAdminLike(user?.role) || user?.role === 'MEDICAL_REP' || hasPermission('attendance.mark')
+  /**
+   * Overlapping attendance fetches (Strict Mode, or attendanceScope updating) used to leave
+   * `meTodayLoading` stuck true: an older request's `finally` could run after a newer request
+   * set loading true, or two `set(false)` calls raced with a third `set(true)`. Only the latest
+   * generation may clear loading or apply results.
+   */
+  const teamAttendanceFetchGenRef = useRef(0)
+  const meTodayFetchGenRef = useRef(0)
+  const teamAttendanceLoadRunRef = useRef(0)
+  const meAttendanceLoadRunRef = useRef(0)
 
-    if (canCompany) {
-      setTeamAttendanceLoading(true)
-      try {
-        const r = await attendanceService.today()
-        setTodayBoard(r.data.data as TodayBoard)
-      } catch (err) {
-        showApiError(err, 'Failed to load team attendance')
-        setTodayBoard(null)
-      } finally {
-        setTeamAttendanceLoading(false)
-      }
-    } else {
+  /**
+   * Team and me are loaded in **separate** effects. A slow `/attendance/me/today` must not delay
+   * the team card: previously one `loadAttendanceWidgets` + shared `tRunStart` / `Promise.all`
+   * made logs and mental model couple the two; `/me/today` can take 10s+ while `/today` returns in
+   * under ~1s (server/DB variance + connection limits). In-flight GET dedupe still applies per service.
+   */
+  const loadTeamAttendanceWidgets = useCallback((): Promise<void> => {
+    const runId = ++teamAttendanceLoadRunRef.current
+    const tRunStart = performance.now()
+    const canCompany = attendanceScope.team
+
+    if (!canCompany) {
+      teamAttendanceFetchGenRef.current += 1
       setTodayBoard(null)
       setTeamAttendanceLoading(false)
+      dashLog('loadAttendanceWidgets:invalidateTeam', { runId, teamGenNow: teamAttendanceFetchGenRef.current })
+      return Promise.resolve()
     }
 
-    if (canMine) {
-      setMeTodayLoading(true)
+    const teamGen = ++teamAttendanceFetchGenRef.current
+    setTeamAttendanceLoading(true)
+    dashLog('loadAttendanceWidgets:teamFetchScheduled', { runId, teamGen })
+
+    return (async () => {
+      const t0 = performance.now()
+      let committedSuccessWithData = false
+      try {
+        const r = await attendanceService.today()
+        const elapsed = Math.round(performance.now() - t0)
+        const currentGen = teamAttendanceFetchGenRef.current
+        const applied = teamGen === currentGen
+        dashLog('attendance:team:response', {
+          runId,
+          teamGen,
+          currentGen,
+          ms: elapsed,
+          appliedData: applied
+        })
+        if (applied) {
+          const board = r.data.data as TodayBoard
+          setTodayBoard(board)
+          setTeamAttendanceLoading(false)
+          committedSuccessWithData = true
+        } else {
+          dashLog('attendance:team:staleIgnored', { runId, teamGen, currentGen })
+        }
+      } catch (err) {
+        if (isAbortError(err)) {
+          dashLog('attendance:team:aborted', { runId, teamGen })
+          return
+        }
+        showApiError(err, 'Failed to load team attendance')
+        const currentGen = teamAttendanceFetchGenRef.current
+        const applied = teamGen === currentGen
+        dashLog('attendance:team:error', { runId, teamGen, currentGen, applied })
+        if (applied) {
+          setTodayBoard(null)
+        }
+      } finally {
+        const currentGen = teamAttendanceFetchGenRef.current
+        const willClear = teamGen === currentGen
+        dashLog('attendance:team:finally', {
+          runId,
+          teamGen,
+          currentGen,
+          willClearTeamLoading: willClear,
+          sinceRunStartMs: Math.round(performance.now() - tRunStart)
+        })
+        if (willClear && !committedSuccessWithData) {
+          setTeamAttendanceLoading(false)
+        }
+      }
+    })()
+  }, [attendanceScope.team])
+
+  const loadMyAttendanceWidget = useCallback((): Promise<void> => {
+    const runId = ++meAttendanceLoadRunRef.current
+    const tRunStart = performance.now()
+    const canMine = attendanceScope.mine
+
+    if (!canMine) {
+      meTodayFetchGenRef.current += 1
+      setMeToday(null)
+      setMeTodayLoading(false)
+      dashLog('loadAttendanceWidgets:invalidateMe', { runId, meGenNow: meTodayFetchGenRef.current })
+      return Promise.resolve()
+    }
+
+    const meGen = ++meTodayFetchGenRef.current
+    setMeTodayLoading(true)
+    dashLog('loadAttendanceWidgets:meFetchScheduled', { runId, meGen })
+
+    return (async () => {
+      const t0 = performance.now()
+      let committedSuccessWithData = false
       try {
         const m = await attendanceService.meToday()
-        setMeToday(m.data.data)
+        const elapsed = Math.round(performance.now() - t0)
+        const currentGen = meTodayFetchGenRef.current
+        const applied = meGen === currentGen
+        dashLog('attendance:meToday:response', {
+          runId,
+          meGen,
+          currentGen,
+          ms: elapsed,
+          appliedData: applied
+        })
+        if (applied) {
+          const payload = m.data.data
+          setMeToday(payload)
+          setMeTodayLoading(false)
+          committedSuccessWithData = true
+        } else {
+          dashLog('attendance:meToday:staleIgnored', { runId, meGen, currentGen })
+        }
       } catch (err) {
+        if (isAbortError(err)) {
+          dashLog('attendance:meToday:aborted', { runId, meGen })
+          return
+        }
         showApiError(err, 'Failed to load my attendance')
-        setMeToday(null)
+        const currentGen = meTodayFetchGenRef.current
+        const applied = meGen === currentGen
+        dashLog('attendance:meToday:error', { runId, meGen, currentGen, applied })
+        if (applied) {
+          setMeToday(null)
+        }
       } finally {
-        setMeTodayLoading(false)
+        const currentGen = meTodayFetchGenRef.current
+        const willClear = meGen === currentGen
+        dashLog('attendance:meToday:finally', {
+          runId,
+          meGen,
+          currentGen,
+          willClearMeLoading: willClear,
+          sinceRunStartMs: Math.round(performance.now() - tRunStart)
+        })
+        if (willClear && !committedSuccessWithData) {
+          setMeTodayLoading(false)
+        }
       }
-    } else {
-      setMeToday(null)
-      /** Only clear loading when we know the user cannot use self-mark (auth ready). If `user` is still null, keep loading true so the card never flashes an empty “loaded” state. */
-      if (user) setMeTodayLoading(false)
-    }
-  }, [hasPermission, user?.role, user])
+    })()
+  }, [attendanceScope.mine])
+
+  /** Check-in / admin tools: refresh both resources and await completion. */
+  const loadAttendanceWidgets = useCallback(async () => {
+    dashLog('loadAttendanceWidgets:refreshBoth', {
+      teamGen: teamAttendanceFetchGenRef.current,
+      meGen: meTodayFetchGenRef.current
+    })
+    await Promise.all([loadTeamAttendanceWidgets(), loadMyAttendanceWidget()])
+  }, [loadTeamAttendanceWidgets, loadMyAttendanceWidget])
 
   useEffect(() => {
+    const ac = new AbortController()
     const fetch = async () => {
+      const runId = `kpi-${Math.random().toString(36).slice(2, 9)}`
+      const t0 = performance.now()
+      dashLog('dashboardKPI:fetch:start', { runId })
       setDashboardDataLoading(true)
       setLoadError(false)
+      let ok = false
       try {
-        const { data: res } = await reportsService.dashboard()
+        const { data: res } = await reportsService.dashboard({ signal: ac.signal })
+        if (ac.signal.aborted) return
+        /** Must set data before clearing loading — do not wrap in startTransition or KPI cards can show empty after skeletons */
         setData(res.data)
+        ok = true
       } catch (err) {
+        if (isAbortError(err)) {
+          dashLog('dashboardKPI:fetch:aborted', { runId })
+          return
+        }
         showApiError(err, 'Failed to load dashboard')
         setLoadError(true)
         setData(null)
       } finally {
-        setDashboardDataLoading(false)
+        if (!ac.signal.aborted) {
+          setDashboardDataLoading(false)
+          dashLog('dashboardKPI:fetch:done', {
+            runId,
+            ok,
+            ms: Math.round(performance.now() - t0)
+          })
+        }
       }
     }
-    fetch()
+    void fetch()
+    return () => ac.abort()
   }, [])
 
   useEffect(() => {
-    loadAttendanceWidgets()
-  }, [loadAttendanceWidgets])
-
-  useEffect(() => {
-    if (!canViewSuppliers) return
+    if (dashboardDataLoading || nonCriticalReady) return
     let cancelled = false
-    ;(async () => {
-      setSupplierWidgetsLoading(true)
-      try {
-        const [r, b] = await Promise.all([
-          supplierService.recentPayments({ limit: 8 }),
-          supplierService.balancesSummary()
-        ])
-        if (cancelled) return
-        const rp = (r.data as any)?.data?.docs ?? (r.data as any)?.docs ?? []
-        const rows = (b.data as any)?.data?.rows ?? (b.data as any)?.rows ?? []
-        setRecentSupplierPayments(Array.isArray(rp) ? rp : [])
-        setTopSuppliersPayable(Array.isArray(rows) ? rows.slice(0, 8) : [])
-      } catch {
-        if (!cancelled) {
-          setRecentSupplierPayments([])
-          setTopSuppliersPayable([])
-        }
-      } finally {
-        if (!cancelled) setSupplierWidgetsLoading(false)
-      }
-    })()
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
+    let idleId: number | null = null
+    const markReady = () => {
+      if (!cancelled) setNonCriticalReady(true)
+    }
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      idleId = window.requestIdleCallback(markReady, { timeout: 500 })
+    } else {
+      timeoutId = setTimeout(markReady, 120)
+    }
     return () => {
       cancelled = true
+      if (idleId != null && typeof window !== 'undefined' && 'cancelIdleCallback' in window) {
+        window.cancelIdleCallback(idleId)
+      }
+      if (timeoutId != null) clearTimeout(timeoutId)
     }
-  }, [canViewSuppliers])
+  }, [dashboardDataLoading, nonCriticalReady])
+
+  const teamAttendanceEffectRunRef = useRef(0)
+  useEffect(() => {
+    teamAttendanceEffectRunRef.current += 1
+    dashLog('effect:teamAttendance', { runCount: teamAttendanceEffectRunRef.current })
+    void loadTeamAttendanceWidgets()
+  }, [loadTeamAttendanceWidgets])
+
+  const myAttendanceEffectRunRef = useRef(0)
+  useEffect(() => {
+    myAttendanceEffectRunRef.current += 1
+    dashLog('effect:myAttendance', { runCount: myAttendanceEffectRunRef.current })
+    void loadMyAttendanceWidget()
+  }, [loadMyAttendanceWidget])
+
+  /** Recent payments and balances in **separate** effects so a slow balances call does not block the payments table. */
+  useEffect(() => {
+    if (!canViewSuppliers || !nonCriticalReady) {
+      dashLog('supplierWidgets:payments:skip', { reason: !canViewSuppliers ? 'noPermission' : 'deferred' })
+      return
+    }
+    const ac = new AbortController()
+    const runId = `sup-pay-${Math.random().toString(36).slice(2, 9)}`
+    const t0 = performance.now()
+    dashLog('supplierWidgets:payments:fetch:start', { runId })
+    setSupplierPaymentsLoading(true)
+    ;(async () => {
+      try {
+        const r = await supplierService.recentPayments({ limit: 8, signal: ac.signal })
+        if (ac.signal.aborted) return
+        const rp = (r.data as any)?.data?.docs ?? (r.data as any)?.docs ?? []
+        setRecentSupplierPayments(Array.isArray(rp) ? rp : [])
+      } catch (e) {
+        if (isAbortError(e)) {
+          dashLog('supplierWidgets:payments:aborted', { runId })
+          return
+        }
+        setRecentSupplierPayments([])
+      } finally {
+        if (!ac.signal.aborted) {
+          setSupplierPaymentsLoading(false)
+          dashLog('supplierWidgets:payments:done', { runId, ms: Math.round(performance.now() - t0) })
+        }
+      }
+    })()
+    return () => ac.abort()
+  }, [canViewSuppliers, nonCriticalReady])
+
+  useEffect(() => {
+    if (!canViewSuppliers || !nonCriticalReady) {
+      dashLog('supplierWidgets:payables:skip', { reason: !canViewSuppliers ? 'noPermission' : 'deferred' })
+      return
+    }
+    const ac = new AbortController()
+    const runId = `sup-bal-${Math.random().toString(36).slice(2, 9)}`
+    const t0 = performance.now()
+    dashLog('supplierWidgets:payables:fetch:start', { runId })
+    setSupplierPayablesLoading(true)
+    ;(async () => {
+      try {
+        const b = await supplierService.balancesSummary({ signal: ac.signal })
+        if (ac.signal.aborted) return
+        const rows = (b.data as any)?.data?.rows ?? (b.data as any)?.rows ?? []
+        setTopSuppliersPayable(Array.isArray(rows) ? rows.slice(0, 8) : [])
+      } catch (e) {
+        if (isAbortError(e)) {
+          dashLog('supplierWidgets:payables:aborted', { runId })
+          return
+        }
+        setTopSuppliersPayable([])
+      } finally {
+        if (!ac.signal.aborted) {
+          setSupplierPayablesLoading(false)
+          dashLog('supplierWidgets:payables:done', { runId, ms: Math.round(performance.now() - t0) })
+        }
+      }
+    })()
+    return () => ac.abort()
+  }, [canViewSuppliers, nonCriticalReady])
 
   const formatPstHm = (iso: string | undefined) => {
     if (!iso) return null
@@ -389,495 +607,45 @@ const DashboardPage = () => {
   return (
     <>
     <Grid container spacing={6}>
-      {(showCompanyAttendance || showMyAttendance) && (
-        <Grid size={{ xs: 12 }}>
-          <Grid container spacing={4}>
-            {showMyAttendance && (
-              <Grid size={{ xs: 12 }}>
-                <Card>
-                  <CardHeader title='My attendance today' />
-                  <CardContent className='flex flex-col gap-3 items-start'>
-                    {meTodayLoading ? (
-                      <Box
-                        sx={{ width: '100%' }}
-                        aria-busy
-                        aria-label='Loading your attendance'
-                      >
-                        {/** Skeletons instead of CircularProgress — the SVG spinner often paints as a tiny dot before Emotion styles apply. */}
-                        <Skeleton variant='rounded' width='42%' height={28} animation='wave' sx={{ mb: 1.5 }} />
-                        <Skeleton variant='text' width='55%' animation='wave' />
-                        <Skeleton variant='text' width='48%' animation='wave' sx={{ mb: 2 }} />
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                          <Skeleton variant='rounded' width={100} height={32} />
-                          <Skeleton variant='rounded' width={100} height={32} />
-                        </Box>
-                      </Box>
-                    ) : (
-                      <>
-                        <Typography component='div' variant='body2' className='flex items-center gap-2 flex-wrap'>
-                          <span>Status:</span>
-                          <Chip
-                            size='small'
-                            label={
-                              meToday?.uiStatus === 'CHECKED_OUT'
-                                ? 'Checked out'
-                                : meToday?.uiStatus === 'PRESENT'
-                                  ? 'Present'
-                                  : 'Not marked'
-                            }
-                            color={
-                              meToday?.uiStatus === 'CHECKED_OUT'
-                                ? 'default'
-                                : meToday?.uiStatus === 'PRESENT'
-                                  ? 'success'
-                                  : 'warning'
-                            }
-                            variant='tonal'
-                          />
-                        </Typography>
-                        {meToday?.checkInTime && (
-                          <Typography variant='body2' color='text.secondary'>
-                            Check-in (PT): {formatPstHm(meToday.checkInTime as string) ?? '—'}
-                          </Typography>
-                        )}
-                        {meToday?.checkOutTime && (
-                          <Typography variant='body2' color='text.secondary'>
-                            Check-out (PT): {formatPstHm(meToday.checkOutTime as string) ?? '—'}
-                          </Typography>
-                        )}
-                        {meToday?.pstDate && (
-                          <Typography variant='caption' color='text.disabled'>
-                            Business date (Pacific): {meToday.pstDate}
-                          </Typography>
-                        )}
-                        <div className='flex flex-wrap gap-2'>
-                          <Button
-                            variant='contained'
-                            size='small'
-                            onClick={handleCheckIn}
-                            disabled={
-                              meTodayLoading ||
-                              checkingIn ||
-                              checkingOut ||
-                              !meToday?.canCheckIn
-                            }
-                          >
-                            {checkingIn ? 'Checking in...' : 'Check In'}
-                          </Button>
-                          <Button
-                            variant='tonal'
-                            color='secondary'
-                            size='small'
-                            onClick={handleCheckOut}
-                            disabled={
-                              meTodayLoading ||
-                              checkingIn ||
-                              checkingOut ||
-                              !meToday?.canCheckOut
-                            }
-                          >
-                            {checkingOut ? 'Checking out...' : 'Check Out'}
-                          </Button>
-                        </div>
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-              </Grid>
-            )}
-            {showCompanyAttendance && (
-              <Grid size={{ xs: 12 }}>
-                <Card>
-                  <CardHeader
-                    title='Employees Working Today'
-                    subheader={
-                      teamAttendanceLoading ? (
-                        <Box sx={{ pt: 0.5 }}>
-                          <Skeleton variant='text' width='55%' height={22} animation='wave' />
-                          <Skeleton variant='text' width='72%' height={18} animation='wave' sx={{ mt: 1 }} />
-                        </Box>
-                      ) : todayBoard?.summary ? (
-                        <div>
-                          <Typography variant='body2' color='text.secondary' component='span' display='block'>
-                            {`Total present: ${todayBoard.summary.present} · Staff tracked: ${todayBoard.summary.totalEmployees}`}
-                          </Typography>
-                          {isAdmin && (
-                            <Typography variant='caption' color='text.secondary' display='block' className='mt-1'>
-                              As an admin, use <strong>Set status</strong> to mark present, half-day, leave, or absent.
-                            </Typography>
-                          )}
-                        </div>
-                      ) : undefined
-                    }
-                  />
-                  <CardContent>
-                    {teamAttendanceLoading ? (
-                      <Grid container spacing={4}>
-                        <Grid size={{ xs: 12, lg: 7 }}>
-                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 2 }}>
-                            <Skeleton variant='rounded' width={140} height={40} animation='wave' />
-                            <Skeleton variant='rounded' width={120} height={40} animation='wave' />
-                            <Skeleton variant='rounded' width={160} height={40} animation='wave' />
-                          </Box>
-                          <TableContainer component={Paper} variant='outlined'>
-                            <Table size='small'>
-                              <TableHead>
-                                <TableRow>
-                                  <TableCell>Name</TableCell>
-                                  <TableCell>Status</TableCell>
-                                  <TableCell align='right'>Check-in (PT)</TableCell>
-                                  <TableCell align='right'>Check-out (PT)</TableCell>
-                                  {isAdmin && <TableCell align='right'>Actions</TableCell>}
-                                </TableRow>
-                              </TableHead>
-                              <TableBody>
-                                {[0, 1, 2, 3, 4].map(i => (
-                                  <TableRow key={i}>
-                                    <TableCell>
-                                      <Skeleton variant='text' width='70%' animation='wave' />
-                                    </TableCell>
-                                    <TableCell>
-                                      <Skeleton variant='rounded' width={72} height={24} animation='wave' />
-                                    </TableCell>
-                                    <TableCell align='right'>
-                                      <Skeleton variant='text' width={48} sx={{ ml: 'auto' }} animation='wave' />
-                                    </TableCell>
-                                    <TableCell align='right'>
-                                      <Skeleton variant='text' width={48} sx={{ ml: 'auto' }} animation='wave' />
-                                    </TableCell>
-                                    {isAdmin && (
-                                      <TableCell align='right'>
-                                        <Skeleton variant='rounded' width={120} height={32} sx={{ ml: 'auto' }} animation='wave' />
-                                      </TableCell>
-                                    )}
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
-                          </TableContainer>
-                        </Grid>
-                        <Grid size={{ xs: 12, lg: 5 }}>
-                          <Skeleton variant='text' width={160} height={24} animation='wave' sx={{ mb: 2 }} />
-                          <Skeleton variant='rounded' width='100%' height={320} animation='wave' />
-                        </Grid>
-                      </Grid>
-                    ) : todayBoard?.summary ? (
-                    <Grid container spacing={4}>
-                      <Grid size={{ xs: 12, lg: 7 }}>
-                        <div className='flex flex-wrap gap-4 mbe-4'>
-                          <CustomTextField
-                            select
-                            size='small'
-                            label='Sort by'
-                            value={sortBy}
-                            onChange={e => setSortBy(e.target.value as 'name' | 'status')}
-                            sx={{ minWidth: 140 }}
-                          >
-                            <MenuItem value='name'>Name</MenuItem>
-                            <MenuItem value='status'>Status</MenuItem>
-                          </CustomTextField>
-                          <CustomTextField
-                            select
-                            size='small'
-                            label='Order'
-                            value={sortDir}
-                            onChange={e => setSortDir(e.target.value as 'asc' | 'desc')}
-                            sx={{ minWidth: 120 }}
-                          >
-                            <MenuItem value='asc'>A → Z</MenuItem>
-                            <MenuItem value='desc'>Z → A</MenuItem>
-                          </CustomTextField>
-                          <CustomTextField
-                            select
-                            size='small'
-                            label='Filter status'
-                            value={filterStatus}
-                            onChange={e => setFilterStatus(e.target.value)}
-                            sx={{ minWidth: 160 }}
-                          >
-                            <MenuItem value=''>All</MenuItem>
-                            <MenuItem value='PRESENT'>Present</MenuItem>
-                            <MenuItem value='HALF_DAY'>Half-Day</MenuItem>
-                            <MenuItem value='ABSENT'>Absent</MenuItem>
-                            <MenuItem value='LEAVE'>Leave</MenuItem>
-                            <MenuItem value='NOT_MARKED'>Not marked</MenuItem>
-                          </CustomTextField>
-                        </div>
-                        <TableContainer component={Paper} variant='outlined'>
-                          <Table size='small'>
-                            <TableHead>
-                              <TableRow>
-                                <TableCell>Name</TableCell>
-                                <TableCell>Status</TableCell>
-                                <TableCell align='right'>Check-in (PT)</TableCell>
-                                <TableCell align='right'>Check-out (PT)</TableCell>
-                                {isAdmin && <TableCell align='right'>Actions</TableCell>}
-                              </TableRow>
-                            </TableHead>
-                            <TableBody>
-                              {tableRows.length === 0 ? (
-                                <TableRow>
-                                  <TableCell colSpan={isAdmin ? 5 : 4} align='center'>
-                                    <Typography color='text.secondary' variant='body2'>
-                                      No rows match the current filters.
-                                    </Typography>
-                                  </TableCell>
-                                </TableRow>
-                              ) : (
-                                tableRows.map(row => (
-                                  <TableRow
-                                    key={row.employeeId}
-                                    hover
-                                    sx={row.hasCheckedOut ? { bgcolor: 'action.hover' } : undefined}
-                                  >
-                                    <TableCell>
-                                      <Typography fontWeight={500}>{row.name}</Typography>
-                                    </TableCell>
-                                    <TableCell>
-                                      <Chip
-                                        size='small'
-                                        variant='tonal'
-                                        label={statusDisplay(row.status)}
-                                        color={statusChipColor(row.status)}
-                                      />
-                                    </TableCell>
-                                    <TableCell align='right'>
-                                      {row.checkInTime ?? '—'}
-                                    </TableCell>
-                                    <TableCell align='right'>
-                                      {row.checkOutTime ?? '—'}
-                                    </TableCell>
-                                    {isAdmin && (
-                                      <TableCell align='right'>
-                                        <Button
-                                          size='small'
-                                          variant='outlined'
-                                          disabled={adminAttendanceBusy}
-                                          onClick={e => openStatusMenu(e, row)}
-                                          endIcon={<i className='tabler-chevron-down text-base' />}
-                                        >
-                                          Set status
-                                        </Button>
-                                      </TableCell>
-                                    )}
-                                  </TableRow>
-                                ))
-                              )}
-                            </TableBody>
-                          </Table>
-                        </TableContainer>
-                      </Grid>
-                      <Grid size={{ xs: 12, lg: 5 }}>
-                        <Typography variant='subtitle2' color='text.secondary' className='mbe-2'>
-                          Today&apos;s distribution
-                        </Typography>
-                        <AppReactApexCharts
-                          type='donut'
-                          width='100%'
-                          height={320}
-                          options={donutOptions}
-                          series={donutSeries}
-                        />
-                      </Grid>
-                    </Grid>
-                    ) : (
-                      <Typography color='text.secondary' variant='body2' className='p-2'>
-                        Team attendance could not be loaded. Try refreshing the page.
-                      </Typography>
-                    )}
-                  </CardContent>
-                </Card>
-              </Grid>
-            )}
-          </Grid>
-        </Grid>
-      )}
-
-      {canViewReports && <ProfitCostDashboardCharts />}
-
-      {canViewInventory && <InventoryDashboardCharts />}
-
-      {canViewSuppliers && (
-        <Grid size={{ xs: 12 }}>
-          <Grid container spacing={4}>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <Card>
-                <CardHeader title='Recent supplier payments' subheader='Latest PAYMENT entries across suppliers' />
-                <CardContent>
-                  {supplierWidgetsLoading ? (
-                    <Skeleton variant='rounded' width='100%' height={120} animation='wave' />
-                  ) : recentSupplierPayments.length === 0 ? (
-                    <Typography variant='body2' color='text.secondary'>
-                      No supplier payments yet.
-                    </Typography>
-                  ) : (
-                    <TableContainer component={Paper} variant='outlined'>
-                      <Table size='small'>
-                        <TableHead>
-                          <TableRow>
-                            <TableCell>Date</TableCell>
-                            <TableCell>Supplier</TableCell>
-                            <TableCell align='right'>Amount</TableCell>
-                            <TableCell>Method</TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {recentSupplierPayments.map((row: any) => {
-                            const sid = row.supplierId
-                            const sname =
-                              typeof sid === 'object' && sid?.name ? sid.name : 'Supplier'
-                            const href =
-                              typeof sid === 'object' && sid?._id ? `/suppliers/${sid._id}` : '#'
-                            return (
-                              <TableRow key={String(row._id)}>
-                                <TableCell>
-                                  {row.date ? new Date(row.date).toLocaleDateString('en-GB') : '—'}
-                                </TableCell>
-                                <TableCell>
-                                  {href !== '#' ? (
-                                    <Link href={href} className='text-primary'>
-                                      {sname}
-                                    </Link>
-                                  ) : (
-                                    sname
-                                  )}
-                                </TableCell>
-                                <TableCell align='right'>{formatPKR(row.amount)}</TableCell>
-                                <TableCell>{row.paymentMethod || '—'}</TableCell>
-                              </TableRow>
-                            )
-                          })}
-                        </TableBody>
-                      </Table>
-                    </TableContainer>
-                  )}
-                </CardContent>
-              </Card>
-            </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <Card>
-                <CardHeader title='Top suppliers by payable' subheader='Opening + casting purchases − payments' />
-                <CardContent>
-                  {supplierWidgetsLoading ? (
-                    <Skeleton variant='rounded' width='100%' height={120} animation='wave' />
-                  ) : topSuppliersPayable.length === 0 ? (
-                    <Typography variant='body2' color='text.secondary'>
-                      No supplier balances loaded.
-                    </Typography>
-                  ) : (
-                    <TableContainer component={Paper} variant='outlined'>
-                      <Table size='small'>
-                        <TableHead>
-                          <TableRow>
-                            <TableCell>Supplier</TableCell>
-                            <TableCell align='right'>Payable</TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {topSuppliersPayable.map((row: any) => (
-                            <TableRow key={String(row.supplierId)}>
-                              <TableCell>
-                                <Link href={`/suppliers/${row.supplierId}`} className='text-primary'>
-                                  {row.name}
-                                </Link>
-                              </TableCell>
-                              <TableCell align='right'>{formatPKR(row.payable)}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </TableContainer>
-                  )}
-                </CardContent>
-              </Card>
-            </Grid>
-          </Grid>
-        </Grid>
-      )}
-
-      {dashboardDataLoading
-        ? Array.from({ length: 6 }).map((_, i) => (
-            <Grid key={`kpi-skel-${i}`} size={{ xs: 12, sm: 6, md: 4, lg: 2 }}>
-              <Card>
-                <CardContent className='flex flex-col items-center gap-2 p-6'>
-                  <Skeleton variant='circular' width={48} height={48} animation='wave' />
-                  <Skeleton variant='text' width='85%' height={36} animation='wave' />
-                  <Skeleton variant='text' width='65%' height={24} animation='wave' />
-                </CardContent>
-              </Card>
-            </Grid>
-          ))
-        : loadError
-          ? (
-            <Grid size={{ xs: 12 }}>
-              <Card>
-                <CardContent className='p-6'>
-                  <Typography color='error'>Summary metrics could not be loaded.</Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-            )
-          : kpis.map((kpi, i) => (
-              <Grid key={i} size={{ xs: 12, sm: 6, md: 4, lg: 2 }}>
-                <Card>
-                  <CardContent className='flex flex-col items-center gap-2 p-6'>
-                    <i className={`${kpi.icon} text-3xl text-${kpi.color}`} />
-                    <Typography variant='h6' className='text-center'>
-                      {kpi.value}
-                    </Typography>
-                    <Typography variant='body2' color='text.secondary'>
-                      {kpi.title}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-            ))}
-
-      <Grid size={{ xs: 12 }}>
-        <Card>
-          <CardHeader title='Orders by Status' />
-          <CardContent>
-            {dashboardDataLoading ? (
-              <div className='flex gap-4 flex-wrap'>
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <Box
-                    key={i}
-                    sx={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      p: 2,
-                      minWidth: 120,
-                      border: 1,
-                      borderColor: 'divider',
-                      borderRadius: 1
-                    }}
-                  >
-                    <Skeleton variant='text' width={48} height={40} animation='wave' />
-                    <Skeleton variant='text' width='75%' height={28} animation='wave' sx={{ mt: 1 }} />
-                    <Skeleton variant='text' width='60%' height={20} animation='wave' />
-                  </Box>
-                ))}
-              </div>
-            ) : loadError || !data ? (
-              <Typography color='text.secondary' variant='body2'>
-                Order breakdown is unavailable until the dashboard loads successfully.
-              </Typography>
-            ) : (
-              <div className='flex gap-4 flex-wrap'>
-                {Object.entries(data.ordersByStatus || {}).map(([status, count]) => (
-                  <div key={status} className='flex flex-col items-center p-4 border rounded'>
-                    <Typography variant='h5'>{count as number}</Typography>
-                    <Typography variant='body2' color='text.secondary'>
-                      {status}
-                    </Typography>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </Grid>
+      <DashboardKPISection dashboardDataLoading={dashboardDataLoading} loadError={loadError} kpis={kpis} data={data} />
+      <DashboardAttendanceSection
+        showCompanyAttendance={showCompanyAttendance}
+        showMyAttendance={showMyAttendance}
+        meTodayLoading={meTodayLoading}
+        meToday={meToday}
+        checkingIn={checkingIn}
+        checkingOut={checkingOut}
+        handleCheckIn={handleCheckIn}
+        handleCheckOut={handleCheckOut}
+        teamAttendanceLoading={teamAttendanceLoading}
+        todayBoard={todayBoard}
+        isAdmin={isAdmin}
+        sortBy={sortBy}
+        setSortBy={setSortBy}
+        sortDir={sortDir}
+        setSortDir={setSortDir}
+        filterStatus={filterStatus}
+        setFilterStatus={setFilterStatus}
+        tableRows={tableRows}
+        adminAttendanceBusy={adminAttendanceBusy}
+        openStatusMenu={openStatusMenu}
+        donutOptions={donutOptions}
+        donutSeries={donutSeries}
+        formatPstHm={formatPstHm}
+      />
+      <DashboardChartsSection
+        canViewReports={canViewReports}
+        canViewInventory={canViewInventory}
+        nonCriticalReady={nonCriticalReady}
+      />
+      <DashboardSupplierSection
+        canViewSuppliers={canViewSuppliers}
+        supplierPaymentsLoading={supplierPaymentsLoading}
+        recentSupplierPayments={recentSupplierPayments}
+        supplierPayablesLoading={supplierPayablesLoading}
+        topSuppliersPayable={topSuppliersPayable}
+        nonCriticalReady={nonCriticalReady}
+      />
     </Grid>
 
     <Menu

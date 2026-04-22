@@ -26,6 +26,7 @@ import { showApiError } from '@/utils/apiErrors'
 const AppReactApexCharts = dynamic(() => import('@/libs/styles/AppReactApexCharts'), { ssr: false })
 
 const TOP_N = 10
+const DASHBOARD_DETAIL_LIMIT = 120
 
 type TabId = 'value' | 'quantity' | 'distributor'
 
@@ -46,36 +47,66 @@ const truncLabel = (s: string, max = 36) => {
   return t.length <= max ? t : `${t.slice(0, max - 1)}…`
 }
 
-const InventoryDashboardCharts = () => {
+type InventoryDashboardChartsProps = {
+  deferFetch?: boolean
+}
+
+const InventoryDashboardCharts = ({ deferFetch = false }: InventoryDashboardChartsProps) => {
   const [tab, setTab] = useState<TabId>('value')
-  const [loading, setLoading] = useState(true)
+  const [summaryLoading, setSummaryLoading] = useState(true)
+  const [detailLoading, setDetailLoading] = useState(true)
   const [summaryRows, setSummaryRows] = useState<SummaryRow[]>([])
   const [detailRows, setDetailRows] = useState<DetailRow[]>([])
   const [totals, setTotals] = useState({ totalUnits: 0, totalValue: 0, uniqueProducts: 0 })
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [detailRes, summaryRes] = await Promise.all([
-        inventoryService.getAll({ limit: 500 }),
-        inventoryService.getSummary()
-      ])
-      setDetailRows(detailRes.data.data || [])
-      const s = summaryRes.data.data
-      setSummaryRows(s?.byProduct || [])
-      setTotals(s?.totals || { totalUnits: 0, totalValue: 0, uniqueProducts: 0 })
-    } catch (e) {
-      showApiError(e, 'Failed to load inventory charts')
-      setSummaryRows([])
-      setDetailRows([])
-    } finally {
-      setLoading(false)
-    }
+  /** Load summary first; detail rows are deferred until distributor tab is opened. */
+  const load = useCallback(() => {
+    void (async () => {
+      setSummaryLoading(true)
+      try {
+        const summaryRes = await inventoryService.getSummary()
+        const s = summaryRes.data.data
+        setSummaryRows(s?.byProduct || [])
+        setTotals(s?.totals || { totalUnits: 0, totalValue: 0, uniqueProducts: 0 })
+      } catch (e) {
+        showApiError(e, 'Failed to load inventory summary')
+        setSummaryRows([])
+        setTotals({ totalUnits: 0, totalValue: 0, uniqueProducts: 0 })
+      } finally {
+        setSummaryLoading(false)
+      }
+    })()
   }, [])
 
   useEffect(() => {
+    if (!deferFetch) return
     load()
-  }, [load])
+  }, [deferFetch, load])
+
+  useEffect(() => {
+    if (!deferFetch || tab !== 'distributor' || detailRows.length > 0) return
+    let cancelled = false
+    void (async () => {
+      setDetailLoading(true)
+      try {
+        /**
+         * Dashboard only needs a compact slice for the chart; full inventory detail belongs to Inventory page.
+         */
+        const detailRes = await inventoryService.getAll({ limit: DASHBOARD_DETAIL_LIMIT })
+        if (!cancelled) setDetailRows(detailRes.data.data || [])
+      } catch (e) {
+        if (!cancelled) {
+          showApiError(e, 'Failed to load inventory detail for distributor view')
+          setDetailRows([])
+        }
+      } finally {
+        if (!cancelled) setDetailLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [deferFetch, tab, detailRows.length])
 
   const distributorAgg = useMemo(() => {
     const m = new Map<string, number>()
@@ -209,14 +240,16 @@ const InventoryDashboardCharts = () => {
           }
         />
         <CardContent className='flex flex-col gap-4'>
-          {!loading && (
+          {summaryLoading ? (
+            <Skeleton variant='text' width='85%' height={24} animation='wave' />
+          ) : (
             <Typography variant='body2' color='text.secondary'>
               Total value {formatPKR(totals.totalValue)} · {totals.totalUnits.toLocaleString('en-PK')} units ·{' '}
               {totals.uniqueProducts} products
             </Typography>
           )}
 
-          {loading ? (
+          {summaryLoading && detailLoading ? (
             <>
               <div className='flex flex-wrap gap-3 mbe-2'>
                 {Array.from({ length: 3 }).map((_, i) => (
@@ -274,7 +307,9 @@ const InventoryDashboardCharts = () => {
               </TabList>
 
               <TabPanel value='value' className='!p-0'>
-                {valueSeries[0]?.data?.some((n: number) => n > 0) ? (
+                {summaryLoading ? (
+                  <Skeleton variant='rounded' width='100%' height={360} animation='wave' />
+                ) : valueSeries[0]?.data?.some((n: number) => n > 0) ? (
                   <AppReactApexCharts
                     type='bar'
                     height={barHeight(byValue.length)}
@@ -287,7 +322,9 @@ const InventoryDashboardCharts = () => {
                 )}
               </TabPanel>
               <TabPanel value='quantity' className='!p-0'>
-                {qtySeries[0]?.data?.some((n: number) => n > 0) ? (
+                {summaryLoading ? (
+                  <Skeleton variant='rounded' width='100%' height={360} animation='wave' />
+                ) : qtySeries[0]?.data?.some((n: number) => n > 0) ? (
                   <AppReactApexCharts
                     type='bar'
                     height={barHeight(byQty.length)}
@@ -300,7 +337,9 @@ const InventoryDashboardCharts = () => {
                 )}
               </TabPanel>
               <TabPanel value='distributor' className='!p-0'>
-                {distSeries[0]?.data?.some((n: number) => n > 0) ? (
+                {detailLoading ? (
+                  <Skeleton variant='rounded' width='100%' height={360} animation='wave' />
+                ) : distSeries[0]?.data?.some((n: number) => n > 0) ? (
                   <AppReactApexCharts
                     type='bar'
                     height={barHeight(distributorAgg.length)}

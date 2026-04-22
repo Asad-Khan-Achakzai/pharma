@@ -29,13 +29,19 @@ const defaultRange = () => {
   return { startDate: formatYyyyMmDd(start), endDate: formatYyyyMmDd(end) }
 }
 
-const ProfitCostDashboardCharts = () => {
+type ProfitCostDashboardChartsProps = {
+  deferFetch?: boolean
+}
+
+const ProfitCostDashboardCharts = ({ deferFetch = false }: ProfitCostDashboardChartsProps) => {
   const [startDate, setStartDate] = useState(() => defaultRange().startDate)
   const [endDate, setEndDate] = useState(() => defaultRange().endDate)
   const [productId, setProductId] = useState('')
   const [distributorId, setDistributorId] = useState('')
   const [employeeId, setEmployeeId] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [summaryLoading, setSummaryLoading] = useState(true)
+  const [trendsLoading, setTrendsLoading] = useState(true)
+  const [revenueLoading, setRevenueLoading] = useState(true)
   const [summary, setSummary] = useState<any>(null)
   const [trends, setTrends] = useState<any>(null)
   const [revBreakdown, setRevBreakdown] = useState<any>(null)
@@ -52,29 +58,50 @@ const ProfitCostDashboardCharts = () => {
     return p
   }, [startDate, endDate, productId, distributorId, employeeId])
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [sumRes, trRes, revRes] = await Promise.all([
-        reportsService.profitSummary(params),
-        reportsService.profitTrends({ ...params, granularity: 'month' }),
-        reportsService.profitRevenue(params)
-      ])
-      setSummary(sumRes.data.data)
-      setTrends(trRes.data.data)
-      setRevBreakdown(revRes.data.data)
-    } catch (e) {
-      showApiError(e, 'Failed to load profit & cost charts')
-    } finally {
-      setLoading(false)
-    }
+  /** Three parallel requests, separate loading — a slow trends query does not block summary KPIs or the donut. */
+  const load = useCallback(() => {
+    void (async () => {
+      setSummaryLoading(true)
+      try {
+        const sumRes = await reportsService.profitSummary(params)
+        setSummary(sumRes.data.data)
+      } catch (e) {
+        showApiError(e, 'Failed to load profit summary')
+      } finally {
+        setSummaryLoading(false)
+      }
+    })()
+    void (async () => {
+      setTrendsLoading(true)
+      try {
+        const trRes = await reportsService.profitTrends({ ...params, granularity: 'month' })
+        setTrends(trRes.data.data)
+      } catch (e) {
+        showApiError(e, 'Failed to load profit trends')
+      } finally {
+        setTrendsLoading(false)
+      }
+    })()
+    void (async () => {
+      setRevenueLoading(true)
+      try {
+        const revRes = await reportsService.profitRevenue(params)
+        setRevBreakdown(revRes.data.data)
+      } catch (e) {
+        showApiError(e, 'Failed to load product revenue')
+      } finally {
+        setRevenueLoading(false)
+      }
+    })()
   }, [params])
 
   useEffect(() => {
+    if (!deferFetch) return
     load()
-  }, [load])
+  }, [deferFetch, load])
 
   useEffect(() => {
+    if (!deferFetch) return
     const fetchLookups = async () => {
       setLookupsLoading(true)
       try {
@@ -93,7 +120,7 @@ const ProfitCostDashboardCharts = () => {
       }
     }
     fetchLookups()
-  }, [])
+  }, [deferFetch])
 
   const lineOptions: ApexOptions = useMemo(() => {
     const s = trends?.series || []
@@ -265,7 +292,11 @@ const ProfitCostDashboardCharts = () => {
                     </MenuItem>
                   ))}
                 </CustomTextField>
-                <Button variant='contained' onClick={load} disabled={loading}>
+                <Button
+                  variant='contained'
+                  onClick={load}
+                  disabled={summaryLoading || trendsLoading || revenueLoading}
+                >
                   Apply
                 </Button>
               </div>
@@ -275,121 +306,92 @@ const ProfitCostDashboardCharts = () => {
             </Typography>
           </div>
 
-          {loading ? (
-            <>
-              <Grid container spacing={4}>
-                {(['Revenue', 'Total cost', 'Net profit', 'Margin'] as const).map(label => (
+          <Grid container spacing={4}>
+            {summaryLoading
+              ? (['Revenue', 'Total cost', 'Net profit', 'Margin'] as const).map(label => (
                   <Grid key={label} size={{ xs: 6, sm: 3 }}>
                     <Typography variant='caption' color='text.secondary'>
                       {label}
                     </Typography>
                     <Skeleton variant='text' width='88%' height={28} animation='wave' sx={{ mt: 0.5 }} />
                   </Grid>
+                ))
+              : [
+                  { label: 'Revenue' as const, children: <Typography fontWeight={600}>{formatPKR(summary?.totalRevenue ?? 0)}</Typography> },
+                  { label: 'Total cost' as const, children: <Typography fontWeight={600}>{formatPKR(summary?.totalCost ?? 0)}</Typography> },
+                  {
+                    label: 'Net profit' as const,
+                    children: (
+                      <Typography
+                        fontWeight={600}
+                        color={summary?.netProfit >= 0 ? 'success.main' : 'error.main'}
+                      >
+                        {formatPKR(summary?.netProfit ?? 0)}
+                      </Typography>
+                    )
+                  },
+                  {
+                    label: 'Margin' as const,
+                    children: (
+                      <Typography fontWeight={600}>
+                        {marginPct != null ? `${marginPct.toFixed(1)}%` : '—'}
+                      </Typography>
+                    )
+                  }
+                ].map(row => (
+                  <Grid key={row.label} size={{ xs: 6, sm: 3 }}>
+                    <Typography variant='caption' color='text.secondary'>
+                      {row.label}
+                    </Typography>
+                    {row.children}
+                  </Grid>
                 ))}
-              </Grid>
-              <Grid container spacing={4}>
-                <Grid size={{ xs: 12, lg: 8 }}>
-                  <Card variant='outlined'>
-                    <CardHeader title='Revenue vs cost vs profit' subheader='By month (trends)' />
-                    <CardContent>
-                      <Skeleton variant='rounded' width='100%' height={360} animation='wave' />
-                    </CardContent>
-                  </Card>
-                </Grid>
-                <Grid size={{ xs: 12, lg: 4 }}>
-                  <Card variant='outlined'>
-                    <CardHeader title='Cost breakdown' />
-                    <CardContent>
-                      <Skeleton variant='rounded' width='100%' height={360} animation='wave' />
-                    </CardContent>
-                  </Card>
-                </Grid>
-                <Grid size={{ xs: 12 }}>
-                  <Card variant='outlined'>
-                    <CardHeader title='Top products by revenue (delivery lines)' />
-                    <CardContent>
-                      <Skeleton variant='rounded' width='100%' height={380} animation='wave' />
-                    </CardContent>
-                  </Card>
-                </Grid>
-              </Grid>
-            </>
-          ) : (
-            <>
-              <Grid container spacing={4}>
-                <Grid size={{ xs: 6, sm: 3 }}>
-                  <Typography variant='caption' color='text.secondary'>
-                    Revenue
-                  </Typography>
-                  <Typography fontWeight={600}>{formatPKR(summary?.totalRevenue ?? 0)}</Typography>
-                </Grid>
-                <Grid size={{ xs: 6, sm: 3 }}>
-                  <Typography variant='caption' color='text.secondary'>
-                    Total cost
-                  </Typography>
-                  <Typography fontWeight={600}>{formatPKR(summary?.totalCost ?? 0)}</Typography>
-                </Grid>
-                <Grid size={{ xs: 6, sm: 3 }}>
-                  <Typography variant='caption' color='text.secondary'>
-                    Net profit
-                  </Typography>
-                  <Typography
-                    fontWeight={600}
-                    color={summary?.netProfit >= 0 ? 'success.main' : 'error.main'}
-                  >
-                    {formatPKR(summary?.netProfit ?? 0)}
-                  </Typography>
-                </Grid>
-                <Grid size={{ xs: 6, sm: 3 }}>
-                  <Typography variant='caption' color='text.secondary'>
-                    Margin
-                  </Typography>
-                  <Typography fontWeight={600}>
-                    {marginPct != null ? `${marginPct.toFixed(1)}%` : '—'}
-                  </Typography>
-                </Grid>
-              </Grid>
+          </Grid>
 
-              <Grid container spacing={4}>
-                <Grid size={{ xs: 12, lg: 8 }}>
-                  <Card variant='outlined'>
-                    <CardHeader title='Revenue vs cost vs profit' subheader='By month (trends)' />
-                    <CardContent>
-                      {trends?.series?.length ? (
-                        <AppReactApexCharts type='line' height={360} options={lineOptions} series={lineSeries} />
-                      ) : (
-                        <Typography color='text.secondary'>No trend data for this range.</Typography>
-                      )}
-                    </CardContent>
-                  </Card>
-                </Grid>
-                <Grid size={{ xs: 12, lg: 4 }}>
-                  <Card variant='outlined'>
-                    <CardHeader title='Cost breakdown' />
-                    <CardContent>
-                      {donutSeries.some((x: number) => x > 0) ? (
-                        <AppReactApexCharts type='donut' height={360} options={donutOptions} series={donutSeries} />
-                      ) : (
-                        <Typography color='text.secondary'>No costs in range.</Typography>
-                      )}
-                    </CardContent>
-                  </Card>
-                </Grid>
-                <Grid size={{ xs: 12 }}>
-                  <Card variant='outlined'>
-                    <CardHeader title='Top products by revenue (delivery lines)' />
-                    <CardContent>
-                      {barSeries[0]?.data?.length ? (
-                        <AppReactApexCharts type='bar' height={380} options={barOptions} series={barSeries} />
-                      ) : (
-                        <Typography color='text.secondary'>No product revenue rows.</Typography>
-                      )}
-                    </CardContent>
-                  </Card>
-                </Grid>
-              </Grid>
-            </>
-          )}
+          <Grid container spacing={4}>
+            <Grid size={{ xs: 12, lg: 8 }}>
+              <Card variant='outlined'>
+                <CardHeader title='Revenue vs cost vs profit' subheader='By month (trends)' />
+                <CardContent>
+                  {trendsLoading ? (
+                    <Skeleton variant='rounded' width='100%' height={360} animation='wave' />
+                  ) : trends?.series?.length ? (
+                    <AppReactApexCharts type='line' height={360} options={lineOptions} series={lineSeries} />
+                  ) : (
+                    <Typography color='text.secondary'>No trend data for this range.</Typography>
+                  )}
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid size={{ xs: 12, lg: 4 }}>
+              <Card variant='outlined'>
+                <CardHeader title='Cost breakdown' />
+                <CardContent>
+                  {summaryLoading ? (
+                    <Skeleton variant='rounded' width='100%' height={360} animation='wave' />
+                  ) : donutSeries.some((x: number) => x > 0) ? (
+                    <AppReactApexCharts type='donut' height={360} options={donutOptions} series={donutSeries} />
+                  ) : (
+                    <Typography color='text.secondary'>No costs in range.</Typography>
+                  )}
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid size={{ xs: 12 }}>
+              <Card variant='outlined'>
+                <CardHeader title='Top products by revenue (delivery lines)' />
+                <CardContent>
+                  {revenueLoading ? (
+                    <Skeleton variant='rounded' width='100%' height={380} animation='wave' />
+                  ) : barSeries[0]?.data?.length ? (
+                    <AppReactApexCharts type='bar' height={380} options={barOptions} series={barSeries} />
+                  ) : (
+                    <Typography color='text.secondary'>No product revenue rows.</Typography>
+                  )}
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
         </CardContent>
       </Card>
     </Grid>

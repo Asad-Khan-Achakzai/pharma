@@ -20,9 +20,11 @@ import Typography from '@mui/material/Typography'
 import Divider from '@mui/material/Divider'
 import MenuItem from '@mui/material/MenuItem'
 import Button from '@mui/material/Button'
+import CircularProgress from '@mui/material/CircularProgress'
 
 // Hook Imports
 import { useSettings } from '@core/hooks/useSettings'
+import { useAuth } from '@/contexts/AuthContext'
 
 // Styled component for badge content
 const BadgeContentSpan = styled('span')({
@@ -37,6 +39,7 @@ const BadgeContentSpan = styled('span')({
 const UserDropdown = () => {
   // States
   const [open, setOpen] = useState(false)
+  const [loggingOut, setLoggingOut] = useState(false)
 
   // Refs
   const anchorRef = useRef<HTMLDivElement>(null)
@@ -45,6 +48,9 @@ const UserDropdown = () => {
   const router = useRouter()
 
   const { settings } = useSettings()
+  const { user, logout } = useAuth()
+  const userName = user?.name || 'User'
+  const userEmail = user?.email || 'No email'
 
   const handleDropdownOpen = () => {
     !open ? setOpen(true) : setOpen(false)
@@ -63,8 +69,8 @@ const UserDropdown = () => {
   }
 
   const handleUserLogout = async () => {
-    // Redirect to login page
-    router.push('/login')
+    setLoggingOut(true)
+    logout()
   }
 
   return (
@@ -78,7 +84,7 @@ const UserDropdown = () => {
       >
         <Avatar
           ref={anchorRef}
-          alt='John Doe'
+          alt={userName}
           src='/images/avatars/1.png'
           onClick={handleDropdownOpen}
           className='cursor-pointer bs-[38px] is-[38px]'
@@ -103,16 +109,16 @@ const UserDropdown = () => {
               <ClickAwayListener onClickAway={e => handleDropdownClose(e as MouseEvent | TouchEvent)}>
                 <MenuList>
                   <div className='flex items-center plb-2 pli-6 gap-2' tabIndex={-1}>
-                    <Avatar alt='John Doe' src='/images/avatars/1.png' />
+                    <Avatar alt={userName} src='/images/avatars/1.png' />
                     <div className='flex items-start flex-col'>
                       <Typography className='font-medium' color='text.primary'>
-                        John Doe
+                        {userName}
                       </Typography>
-                      <Typography variant='caption'>admin@vuexy.com</Typography>
+                      <Typography variant='caption'>{userEmail}</Typography>
                     </div>
                   </div>
                   <Divider className='mlb-1' />
-                  <MenuItem className='mli-2 gap-3' onClick={e => handleDropdownClose(e)}>
+                  {/* <MenuItem className='mli-2 gap-3' onClick={e => handleDropdownClose(e)}>
                     <i className='tabler-user' />
                     <Typography color='text.primary'>My Profile</Typography>
                   </MenuItem>
@@ -127,18 +133,19 @@ const UserDropdown = () => {
                   <MenuItem className='mli-2 gap-3' onClick={e => handleDropdownClose(e)}>
                     <i className='tabler-help-circle' />
                     <Typography color='text.primary'>FAQ</Typography>
-                  </MenuItem>
+                  </MenuItem> */}
                   <div className='flex items-center plb-2 pli-3'>
                     <Button
                       fullWidth
                       variant='contained'
                       color='error'
                       size='small'
-                      endIcon={<i className='tabler-logout' />}
+                      disabled={loggingOut}
+                      endIcon={loggingOut ? <CircularProgress size={14} color='inherit' /> : <i className='tabler-logout' />}
                       onClick={handleUserLogout}
                       sx={{ '& .MuiButton-endIcon': { marginInlineStart: 1.5 } }}
                     >
-                      Logout
+                      {loggingOut ? 'Logging out...' : 'Logout'}
                     </Button>
                   </div>
                 </MenuList>

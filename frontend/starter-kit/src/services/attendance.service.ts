@@ -1,11 +1,39 @@
+import type { AxiosResponse } from 'axios'
 import api from './api'
+
+/**
+ * Coalesce duplicate in-flight GETs (e.g. React Strict Mode double effect) when no AbortSignal.
+ * Pass `{ signal }` from a caller that must cancel (we use this only for explicit cancel cases).
+ */
+let meTodayInFlight: Promise<AxiosResponse<unknown>> | null = null
+let todayInFlight: Promise<AxiosResponse<unknown>> | null = null
 
 export const attendanceService = {
   mark: (body?: { checkOutTime?: string; notes?: string }) => api.post('/attendance/mark', body ?? {}),
   checkIn: () => api.post('/attendance/checkin', {}),
   checkOut: () => api.post('/attendance/checkout', {}),
-  meToday: () => api.get('/attendance/me/today'),
-  today: () => api.get('/attendance/today'),
+  meToday: (config?: { signal?: AbortSignal }) => {
+    if (config?.signal) {
+      return api.get('/attendance/me/today', config)
+    }
+    if (!meTodayInFlight) {
+      meTodayInFlight = api.get('/attendance/me/today').finally(() => {
+        meTodayInFlight = null
+      })
+    }
+    return meTodayInFlight
+  },
+  today: (config?: { signal?: AbortSignal }) => {
+    if (config?.signal) {
+      return api.get('/attendance/today', config)
+    }
+    if (!todayInFlight) {
+      todayInFlight = api.get('/attendance/today').finally(() => {
+        todayInFlight = null
+      })
+    }
+    return todayInFlight
+  },
   report: (params: { employeeId: string; startDate: string; endDate: string }) =>
     api.get('/attendance/report', { params }),
   monthlySummary: (params: { employeeId: string; month: string }) =>
