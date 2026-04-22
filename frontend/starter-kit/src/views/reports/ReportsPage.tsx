@@ -8,15 +8,28 @@ import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
+import Skeleton from '@mui/material/Skeleton'
 import Tabs from '@mui/material/Tabs'
 import Tab from '@mui/material/Tab'
-import Box from '@mui/material/Box'
 import { showApiError } from '@/utils/apiErrors'
 import CustomTextField from '@core/components/mui/TextField'
 import { reportsService } from '@/services/reports.service'
 import { mapProfitFinancial } from '@/utils/financialMapper'
 import FinancialReportsSection from '@/views/reports/FinancialReportsSection'
 import ProfitCostManagementSection from '@/views/reports/ProfitCostManagementSection'
+import PageSkeleton from '@/components/skeletons/PageSkeleton'
+
+type ReportsOpsCache = {
+  profit: any
+  expenses: any[]
+  outstanding: any[]
+  doctorROI: any[]
+  repPerf: any[]
+  invVal: any[]
+}
+
+let reportsOpsCache: ReportsOpsCache | null = null
+let reportsVisitCache: any = null
 
 const formatPKR = (v: number) =>
   `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -25,14 +38,14 @@ const ReportsPage = () => {
   const [tab, setTab] = useState(0)
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
-  const [profit, setProfit] = useState<any>(null)
-  const [expenses, setExpenses] = useState<any[]>([])
-  const [outstanding, setOutstanding] = useState<any[]>([])
-  const [doctorROI, setDoctorROI] = useState<any[]>([])
-  const [repPerf, setRepPerf] = useState<any[]>([])
-  const [invVal, setInvVal] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [visitSummary, setVisitSummary] = useState<any>(null)
+  const [profit, setProfit] = useState<any>(reportsOpsCache?.profit ?? null)
+  const [expenses, setExpenses] = useState<any[]>(reportsOpsCache?.expenses ?? [])
+  const [outstanding, setOutstanding] = useState<any[]>(reportsOpsCache?.outstanding ?? [])
+  const [doctorROI, setDoctorROI] = useState<any[]>(reportsOpsCache?.doctorROI ?? [])
+  const [repPerf, setRepPerf] = useState<any[]>(reportsOpsCache?.repPerf ?? [])
+  const [invVal, setInvVal] = useState<any[]>(reportsOpsCache?.invVal ?? [])
+  const [loading, setLoading] = useState(!reportsOpsCache)
+  const [visitSummary, setVisitSummary] = useState<any>(reportsVisitCache)
   const [visitWeekStart, setVisitWeekStart] = useState('')
   const [visitWeekEnd, setVisitWeekEnd] = useState('')
   const [visitLoading, setVisitLoading] = useState(false)
@@ -49,7 +62,8 @@ const ReportsPage = () => {
   }, [])
 
   const fetchReports = async () => {
-    setLoading(true)
+    const hasCache = Boolean(reportsOpsCache)
+    if (!hasCache) setLoading(true)
     try {
       const params = { from: from || undefined, to: to || undefined }
       const [profitRes, expRes, outRes, roiRes, repRes, invRes] = await Promise.all([
@@ -60,12 +74,21 @@ const ReportsPage = () => {
         reportsService.repPerformance(),
         reportsService.inventoryValuation()
       ])
-      setProfit(mapProfitFinancial(profitRes.data.data))
-      setExpenses(expRes.data.data || [])
-      setOutstanding(outRes.data.data || [])
-      setDoctorROI(roiRes.data.data || [])
-      setRepPerf(repRes.data.data || [])
-      setInvVal(invRes.data.data || [])
+      const next = {
+        profit: mapProfitFinancial(profitRes.data.data),
+        expenses: expRes.data.data || [],
+        outstanding: outRes.data.data || [],
+        doctorROI: roiRes.data.data || [],
+        repPerf: repRes.data.data || [],
+        invVal: invRes.data.data || []
+      }
+      reportsOpsCache = next
+      setProfit(next.profit)
+      setExpenses(next.expenses)
+      setOutstanding(next.outstanding)
+      setDoctorROI(next.doctorROI)
+      setRepPerf(next.repPerf)
+      setInvVal(next.invVal)
     } catch (err) {
       showApiError(err, 'Failed to load reports')
     } finally {
@@ -84,9 +107,11 @@ const ReportsPage = () => {
 
   const fetchVisitSummary = async () => {
     if (!visitWeekStart || !visitWeekEnd) return
-    setVisitLoading(true)
+    const hasCache = Boolean(reportsVisitCache)
+    if (!hasCache) setVisitLoading(true)
     try {
       const res = await reportsService.visitSummary({ weekStart: visitWeekStart, weekEnd: visitWeekEnd })
+      reportsVisitCache = res.data.data
       setVisitSummary(res.data.data)
     } catch (err) {
       showApiError(err, 'Failed to load visit summary')
@@ -191,7 +216,12 @@ const ReportsPage = () => {
                   </Button>
                 </div>
                 {visitLoading ? (
-                  <CircularProgress size={28} />
+                  <div className='flex flex-wrap gap-4'>
+                    <Skeleton variant='text' width={180} height={24} animation='wave' />
+                    <Skeleton variant='text' width={140} height={24} animation='wave' />
+                    <Skeleton variant='text' width={140} height={24} animation='wave' />
+                    <Skeleton variant='text' width={140} height={24} animation='wave' />
+                  </div>
                 ) : visitSummary ? (
                   <div className='flex flex-wrap gap-6'>
                     <Typography>Planned (total items): <strong>{visitSummary.totalPlanned}</strong></Typography>
@@ -209,8 +239,8 @@ const ReportsPage = () => {
           </Grid>
 
           {loading ? (
-            <Grid size={{ xs: 12 }} className='flex justify-center p-12'>
-              <CircularProgress />
+            <Grid size={{ xs: 12 }}>
+              <PageSkeleton cardCount={3} showTable />
             </Grid>
           ) : (
             <>
@@ -231,7 +261,7 @@ const ReportsPage = () => {
                   <CardHeader title='Expenses breakdown' />
                   <CardContent>
                     {expenses.length === 0 ? (
-                      <Typography>No expenses</Typography>
+                      <Skeleton variant='text' width='40%' height={22} animation='wave' />
                     ) : (
                       expenses.map((e: any) => (
                         <div key={e._id} className='flex justify-between mbe-2'>
@@ -254,7 +284,7 @@ const ReportsPage = () => {
                       For full pharmacy list including credits, use the Financial tab.
                     </Typography>
                     {outstanding.length === 0 ? (
-                      <Typography>No outstanding</Typography>
+                      <Skeleton variant='text' width='45%' height={22} animation='wave' />
                     ) : (
                       outstanding.map((o: any) => (
                         <div key={o._id} className='flex justify-between mbe-2'>
@@ -276,7 +306,7 @@ const ReportsPage = () => {
                   <CardHeader title='Doctor ROI' />
                   <CardContent>
                     {doctorROI.length === 0 ? (
-                      <Typography>No data</Typography>
+                      <Skeleton variant='text' width='36%' height={22} animation='wave' />
                     ) : (
                       doctorROI.map((d: any) => (
                         <div key={d._id} className='flex justify-between mbe-2'>
@@ -294,7 +324,7 @@ const ReportsPage = () => {
                   <CardHeader title='Rep performance' />
                   <CardContent>
                     {repPerf.length === 0 ? (
-                      <Typography>No data</Typography>
+                      <Skeleton variant='text' width='36%' height={22} animation='wave' />
                     ) : (
                       repPerf.map((r: any) => (
                         <div key={r._id} className='flex justify-between mbe-2'>
@@ -316,7 +346,7 @@ const ReportsPage = () => {
                   <CardHeader title='Inventory valuation' />
                   <CardContent>
                     {invVal.length === 0 ? (
-                      <Typography>No data</Typography>
+                      <Skeleton variant='text' width='36%' height={22} animation='wave' />
                     ) : (
                       invVal.map((v: any) => (
                         <div key={v._id} className='flex justify-between mbe-2'>

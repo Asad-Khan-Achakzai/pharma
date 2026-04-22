@@ -6,13 +6,15 @@ import Card from '@mui/material/Card'
 import CardHeader from '@mui/material/CardHeader'
 import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
-import CircularProgress from '@mui/material/CircularProgress'
 import Chip from '@mui/material/Chip'
 import Divider from '@mui/material/Divider'
 import { formatYyyyMmDd } from '@/utils/dateLocal'
 import { showApiError } from '@/utils/apiErrors'
 import { reportsService } from '@/services/reports.service'
 import { mapSummaryFinancial } from '@/utils/financialMapper'
+import PageSkeleton from '@/components/skeletons/PageSkeleton'
+
+let profitCostCache: { summary: any; products: any[] } | null = null
 
 const formatPKR = (v: number) =>
   `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -25,19 +27,25 @@ const monthToDateRange = () => {
 
 const ProfitCostManagementSection = () => {
   const params = useMemo(() => monthToDateRange(), [])
-  const [loading, setLoading] = useState(true)
-  const [summary, setSummary] = useState<any>(null)
-  const [products, setProducts] = useState<any[]>([])
+  const [loading, setLoading] = useState(!profitCostCache)
+  const [summary, setSummary] = useState<any>(profitCostCache?.summary ?? null)
+  const [products, setProducts] = useState<any[]>(profitCostCache?.products ?? [])
 
   const load = useCallback(async () => {
-    setLoading(true)
+    const hasCache = Boolean(profitCostCache)
+    if (!hasCache) setLoading(true)
     try {
       const [sumRes, prodRes] = await Promise.all([
         reportsService.profitSummary(params),
         reportsService.productProfitability({ ...params, limit: '80' })
       ])
-      setSummary(mapSummaryFinancial(sumRes.data.data))
-      setProducts(prodRes.data.data || [])
+      const next = {
+        summary: mapSummaryFinancial(sumRes.data.data),
+        products: prodRes.data.data || []
+      }
+      profitCostCache = next
+      setSummary(next.summary)
+      setProducts(next.products)
     } catch (e) {
       showApiError(e, 'Failed to load profit & cost reports')
     } finally {
@@ -65,8 +73,8 @@ const ProfitCostManagementSection = () => {
       </Grid>
 
       {loading ? (
-        <Grid size={{ xs: 12 }} className='flex justify-center p-12'>
-          <CircularProgress />
+        <Grid size={{ xs: 12 }}>
+          <PageSkeleton cardCount={4} showTable />
         </Grid>
       ) : (
         <>

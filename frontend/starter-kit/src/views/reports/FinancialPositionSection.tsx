@@ -8,12 +8,15 @@ import CardHeader from '@mui/material/CardHeader'
 import CardContent from '@mui/material/CardContent'
 import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
-import CircularProgress from '@mui/material/CircularProgress'
+import Skeleton from '@mui/material/Skeleton'
 import TextField from '@mui/material/TextField'
 import type { ApexOptions } from 'apexcharts'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { useAuth } from '@/contexts/AuthContext'
 import { reportsService } from '@/services/reports.service'
+import CardSkeleton from '@/components/skeletons/CardSkeleton'
+
+let financialPositionCache: { summary: any; flow: any } | null = null
 
 const AppReactApexCharts = dynamic(() => import('@/libs/styles/AppReactApexCharts'), { ssr: false })
 
@@ -35,42 +38,40 @@ const FinancialPositionSection = () => {
   const { user } = useAuth()
   const canEditCashOpening = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN'
 
-  const [loading, setLoading] = useState(true)
-  const [flowLoading, setFlowLoading] = useState(true)
-  const [summary, setSummary] = useState<any>(null)
-  const [flow, setFlow] = useState<any>(null)
+  const [loading, setLoading] = useState(!financialPositionCache)
+  const [flowLoading, setFlowLoading] = useState(!financialPositionCache)
+  const [summary, setSummary] = useState<any>(financialPositionCache?.summary ?? null)
+  const [flow, setFlow] = useState<any>(financialPositionCache?.flow ?? null)
   const [cashInput, setCashInput] = useState('')
   const [savingCash, setSavingCash] = useState(false)
 
-  const loadSummary = useCallback(async () => {
-    setLoading(true)
+  const loadData = useCallback(async () => {
+    const hasCache = Boolean(financialPositionCache)
+    if (!hasCache) {
+      setLoading(true)
+      setFlowLoading(true)
+    }
     try {
-      const res = await reportsService.financialSummary()
-      setSummary(res.data.data)
-      setCashInput(String(res.data.data?.cashOpeningBalance ?? 0))
+      const [summaryRes, flowRes] = await Promise.all([
+        reportsService.financialSummary(),
+        reportsService.financialFlowMonthly({ months: 12 })
+      ])
+      const next = { summary: summaryRes.data.data, flow: flowRes.data.data }
+      financialPositionCache = next
+      setSummary(next.summary)
+      setFlow(next.flow)
+      setCashInput(String(next.summary?.cashOpeningBalance ?? 0))
     } catch (e) {
-      showApiError(e, 'Failed to load financial summary')
+      showApiError(e, 'Failed to load financial position')
     } finally {
       setLoading(false)
-    }
-  }, [])
-
-  const loadFlow = useCallback(async () => {
-    setFlowLoading(true)
-    try {
-      const res = await reportsService.financialFlowMonthly({ months: 12 })
-      setFlow(res.data.data)
-    } catch (e) {
-      showApiError(e, 'Failed to load cash flow series')
-    } finally {
       setFlowLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    loadSummary()
-    loadFlow()
-  }, [loadSummary, loadFlow])
+    void loadData()
+  }, [loadData])
 
   const saveCashOpening = async () => {
     const n = parseFloat(cashInput)
@@ -82,7 +83,7 @@ const FinancialPositionSection = () => {
     try {
       await reportsService.patchCompanyCashOpening({ cashOpeningBalance: n })
       showSuccess('Cash opening balance saved')
-      await loadSummary()
+      await loadData()
     } catch (e) {
       showApiError(e, 'Failed to update')
     } finally {
@@ -144,8 +145,8 @@ const FinancialPositionSection = () => {
 
   if (loading && !summary) {
     return (
-      <Grid size={{ xs: 12 }} className='flex justify-center p-10'>
-        <CircularProgress />
+      <Grid size={{ xs: 12 }}>
+        <CardSkeleton rows={6} />
       </Grid>
     )
   }
@@ -249,7 +250,7 @@ const FinancialPositionSection = () => {
           <CardHeader title='Cash inflow vs outflow (12 months)' />
           <CardContent>
             {flowLoading ? (
-              <CircularProgress size={28} />
+              <Skeleton variant='rounded' width='100%' height={320} animation='wave' />
             ) : (
               <AppReactApexCharts type='line' height={320} options={lineOptions} series={lineSeries} />
             )}

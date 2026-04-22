@@ -21,12 +21,22 @@ import TableRow from '@mui/material/TableRow'
 import TableContainer from '@mui/material/TableContainer'
 import Paper from '@mui/material/Paper'
 import Chip from '@mui/material/Chip'
+import Skeleton from '@mui/material/Skeleton'
 import { showApiError } from '@/utils/apiErrors'
 import CustomTextField from '@core/components/mui/TextField'
 import { reportsService } from '@/services/reports.service'
 import { pharmaciesService } from '@/services/pharmacies.service'
 import { distributorsService } from '@/services/distributors.service'
 import FinancialPositionSection from '@/views/reports/FinancialPositionSection'
+import TableSkeleton from '@/components/skeletons/TableSkeleton'
+
+let financialReportsCache: {
+  pharmacies: any[]
+  distributors: any[]
+  pharmacyBal: any
+  distBal: any
+  periodData: any
+} | null = null
 
 const formatPKR = (v: number) =>
   `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -47,13 +57,13 @@ const FinancialReportsSection = () => {
   const [collectorType, setCollectorType] = useState('')
   const [settlementDirection, setSettlementDirection] = useState('')
 
-  const [pharmacies, setPharmacies] = useState<any[]>([])
-  const [distributors, setDistributors] = useState<any[]>([])
+  const [pharmacies, setPharmacies] = useState<any[]>(financialReportsCache?.pharmacies ?? [])
+  const [distributors, setDistributors] = useState<any[]>(financialReportsCache?.distributors ?? [])
 
-  const [pharmacyBal, setPharmacyBal] = useState<any>(null)
-  const [distBal, setDistBal] = useState<any>(null)
-  const [periodData, setPeriodData] = useState<any>(null)
-  const [loadingBal, setLoadingBal] = useState(true)
+  const [pharmacyBal, setPharmacyBal] = useState<any>(financialReportsCache?.pharmacyBal ?? null)
+  const [distBal, setDistBal] = useState<any>(financialReportsCache?.distBal ?? null)
+  const [periodData, setPeriodData] = useState<any>(financialReportsCache?.periodData ?? null)
+  const [loadingBal, setLoadingBal] = useState(!financialReportsCache?.pharmacyBal || !financialReportsCache?.distBal)
   const [loadingPeriod, setLoadingPeriod] = useState(false)
 
   const [detailOpen, setDetailOpen] = useState<'pharmacy' | 'distributor' | null>(null)
@@ -62,14 +72,23 @@ const FinancialReportsSection = () => {
   const [loadingDetail, setLoadingDetail] = useState(false)
 
   const loadBalances = useCallback(async () => {
-    setLoadingBal(true)
+    const hasCache = Boolean(financialReportsCache?.pharmacyBal && financialReportsCache?.distBal)
+    if (!hasCache) setLoadingBal(true)
     try {
       const [pb, db] = await Promise.all([
         reportsService.pharmacyBalances(),
         reportsService.distributorBalances()
       ])
-      setPharmacyBal(pb.data.data)
-      setDistBal(db.data.data)
+      const next = {
+        pharmacies: financialReportsCache?.pharmacies ?? [],
+        distributors: financialReportsCache?.distributors ?? [],
+        pharmacyBal: pb.data.data,
+        distBal: db.data.data,
+        periodData: financialReportsCache?.periodData ?? null
+      }
+      financialReportsCache = next
+      setPharmacyBal(next.pharmacyBal)
+      setDistBal(next.distBal)
     } catch (err) {
       showApiError(err, 'Failed to load balances')
     } finally {
@@ -84,12 +103,21 @@ const FinancialReportsSection = () => {
   useEffect(() => {
     const load = async () => {
       try {
+        if (financialReportsCache?.pharmacies && financialReportsCache?.distributors) return
         const [pr, dr] = await Promise.all([
           pharmaciesService.list({ limit: 500 }),
           distributorsService.list({ limit: 500, isActive: 'true' })
         ])
-        setPharmacies(pr.data.data || [])
-        setDistributors(dr.data.data || [])
+        const next = {
+          pharmacies: pr.data.data || [],
+          distributors: dr.data.data || [],
+          pharmacyBal: financialReportsCache?.pharmacyBal ?? null,
+          distBal: financialReportsCache?.distBal ?? null,
+          periodData: financialReportsCache?.periodData ?? null
+        }
+        financialReportsCache = next
+        setPharmacies(next.pharmacies)
+        setDistributors(next.distributors)
       } catch {
         /* optional */
       }
@@ -109,7 +137,15 @@ const FinancialReportsSection = () => {
       if (settlementDirection) params.direction = settlementDirection
 
       const res = await reportsService.financialOverview(params)
-      setPeriodData(res.data.data)
+      const next = {
+        pharmacies: financialReportsCache?.pharmacies ?? pharmacies,
+        distributors: financialReportsCache?.distributors ?? distributors,
+        pharmacyBal: financialReportsCache?.pharmacyBal ?? pharmacyBal,
+        distBal: financialReportsCache?.distBal ?? distBal,
+        periodData: res.data.data
+      }
+      financialReportsCache = next
+      setPeriodData(next.periodData)
     } catch (err) {
       showApiError(err, 'Failed to load period report')
     } finally {
@@ -175,9 +211,7 @@ const FinancialReportsSection = () => {
           <CardHeader title='Current balances (all pharmacies & distributors)' />
           <CardContent>
             {loadingBal ? (
-              <div className='flex justify-center p-6'>
-                <CircularProgress />
-              </div>
+              <TableSkeleton columns={4} rows={6} />
             ) : (
               <Grid container spacing={4}>
                 <Grid size={{ xs: 12, lg: 6 }}>
@@ -453,7 +487,11 @@ const FinancialReportsSection = () => {
         </DialogTitle>
         <DialogContent>
           {loadingDetail ? (
-            <CircularProgress className='m-6' />
+            <div className='p-2'>
+              <Skeleton variant='text' width='48%' height={26} animation='wave' />
+              <Skeleton variant='text' width='65%' height={22} animation='wave' />
+              <Skeleton variant='rounded' width='100%' height={180} animation='wave' />
+            </div>
           ) : detailBody ? (
             <div className='flex flex-col gap-2 p-2'>
               {detailOpen === 'pharmacy' && (

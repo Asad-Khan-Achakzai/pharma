@@ -52,6 +52,8 @@ function dashLog(phase: string, data?: Record<string, unknown>) {
   }
 }
 
+let dashboardKpiCache: any = null
+
 const DashboardPage = () => {
   const { user } = useAuth()
 
@@ -66,9 +68,9 @@ const DashboardPage = () => {
 
   const showCompanyAttendance = attendanceScope.team
   const showMyAttendance = attendanceScope.mine
-  const [data, setData] = useState<any>(null)
+  const [data, setData] = useState<any>(dashboardKpiCache)
   const [loadError, setLoadError] = useState(false)
-  const [dashboardDataLoading, setDashboardDataLoading] = useState(true)
+  const [dashboardDataLoading, setDashboardDataLoading] = useState(!dashboardKpiCache)
   const [todayBoard, setTodayBoard] = useState<TodayBoard | null>(null)
   /** Start true so team card does not flash the error state before the first fetch. */
   const [teamAttendanceLoading, setTeamAttendanceLoading] = useState(true)
@@ -291,14 +293,16 @@ const DashboardPage = () => {
       const runId = `kpi-${Math.random().toString(36).slice(2, 9)}`
       const t0 = performance.now()
       dashLog('dashboardKPI:fetch:start', { runId })
-      setDashboardDataLoading(true)
+      if (!dashboardKpiCache) setDashboardDataLoading(true)
       setLoadError(false)
       let ok = false
       try {
         const { data: res } = await reportsService.dashboard({ signal: ac.signal })
         if (ac.signal.aborted) return
         /** Must set data before clearing loading — do not wrap in startTransition or KPI cards can show empty after skeletons */
-        setData(mapDashboardFinancial(res.data))
+        const mapped = mapDashboardFinancial(res.data)
+        dashboardKpiCache = mapped
+        setData(mapped)
         ok = true
       } catch (err) {
         if (isAbortError(err)) {
