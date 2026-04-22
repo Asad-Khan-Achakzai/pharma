@@ -17,14 +17,24 @@ const Product = require('../models/Product');
 const Distributor = require('../models/Distributor');
 const Collection = require('../models/Collection');
 const Settlement = require('../models/Settlement');
+const Ledger = require('../models/Ledger');
 const reportService = require('./report.service');
 const { roundPKR } = require('../utils/currency');
+const {
+  FINANCIAL_SCOPE,
+  canonicalFromSummary,
+  canonicalFromTrends,
+  withFinancialEnvelope
+} = require('../constants/financialSchema');
 const {
   TRANSACTION_TYPE,
   EXPENSE_CATEGORY,
   PAYROLL_STATUS,
   SETTLEMENT_DIRECTION,
-  COLLECTOR_TYPE
+  COLLECTOR_TYPE,
+  LEDGER_ENTITY_TYPE,
+  LEDGER_TYPE,
+  LEDGER_REFERENCE_TYPE
 } = require('../constants/enums');
 
 const objectId = (id) => new mongoose.Types.ObjectId(id);
@@ -42,6 +52,56 @@ const parseRange = (startDate, endDate) => {
   if (startDate) r.$gte = new Date(startDate);
   if (endDate) r.$lte = endOfDay(endDate);
   return r;
+};
+
+/**
+ * Distributor commission expense = delivery distributor share - return clearing reversal.
+ * Keeps net profit aligned with actual company earnings without double counting.
+ */
+const distributorCommissionCostSum = async (companyId, { startDate, endDate, distributorId }) => {
+  const cid = objectId(companyId);
+  const dateR = parseRange(startDate, endDate);
+  const deliveryMatch = {
+    companyId: cid,
+    isDeleted: nd,
+    ...(Object.keys(dateR).length ? { deliveredAt: dateR } : {})
+  };
+  if (distributorId) {
+    deliveryMatch.orderId = { $exists: true };
+  }
+  const deliveryPipe = [
+    { $match: deliveryMatch },
+    ...(distributorId
+      ? [
+          { $lookup: { from: 'orders', localField: 'orderId', foreignField: '_id', as: 'o' } },
+          { $unwind: '$o' },
+          { $match: { 'o.distributorId': objectId(distributorId) } }
+        ]
+      : []),
+    { $group: { _id: null, total: { $sum: { $ifNull: ['$distributorShareTotal', 0] } } } }
+  ];
+
+  const reversalMatch = {
+    companyId: cid,
+    entityType: LEDGER_ENTITY_TYPE.DISTRIBUTOR_CLEARING,
+    referenceType: LEDGER_REFERENCE_TYPE.RETURN_CLEARING_ADJ,
+    type: LEDGER_TYPE.DEBIT,
+    isDeleted: nd,
+    ...(Object.keys(dateR).length ? { date: dateR } : {}),
+    ...(distributorId ? { entityId: objectId(distributorId) } : {})
+  };
+
+  const [deliveryAgg, reversalAgg] = await Promise.all([
+    DeliveryRecord.aggregate(deliveryPipe),
+    Ledger.aggregate([
+      { $match: reversalMatch },
+      { $group: { _id: null, total: { $sum: '$amount' } } }
+    ])
+  ]);
+
+  const deliveryShare = roundPKR(deliveryAgg[0]?.total || 0);
+  const reversal = roundPKR(reversalAgg[0]?.total || 0);
+  return roundPKR(deliveryShare - reversal);
 };
 
 /** Transaction-based revenue + COGS (includes returns). Optional distributor / product filters. */
@@ -359,9 +419,15 @@ const summary = async (companyId, query = {}) => {
     doctorActivityCostSum(companyId, { startDate, endDate }),
     otherExpensesSum(companyId, { startDate, endDate })
   ]);
+  const distributorCommission = await distributorCommissionCostSum(companyId, {
+    startDate,
+    endDate,
+    distributorId
+  });
 
-  const totalCost = roundPKR(productCost + ship + payroll + doctor + other);
-  const netProfit = roundPKR(totalRevenue - totalCost);
+  const grossProfit = roundPKR(totalRevenue - productCost);
+  const netProfit = roundPKR(grossProfit - distributorCommission - payroll - other);
+  const totalCost = roundPKR(productCost + distributorCommission + payroll + other);
   const profitMarginPercent =
     totalRevenue > 0 ? roundPKR((netProfit / totalRevenue) * 100) : totalRevenue === 0 && netProfit === 0 ? 0 : null;
 
@@ -384,7 +450,7 @@ const summary = async (companyId, query = {}) => {
 
   const liquidity = await liquiditySnapshot(companyId, { startDate, endDate });
 
-  return {
+  const response = {
     basis: 'transaction_delivery',
     period: { startDate: startDate || null, endDate: endDate || null },
     filters: {
@@ -393,6 +459,7 @@ const summary = async (companyId, query = {}) => {
       distributorId: distributorId || null
     },
     totalRevenue,
+    grossProfit,
     totalCost,
     netProfit,
     profitMarginPercent,
@@ -400,6 +467,7 @@ const summary = async (companyId, query = {}) => {
     breakdown: {
       productCost,
       shippingCost: ship,
+      distributorCommissionCost: distributorCommission,
       payrollCost: payroll,
       doctorActivityCost: doctor,
       otherExpenses: other
@@ -412,6 +480,12 @@ const summary = async (companyId, query = {}) => {
     },
     liquidity
   };
+
+  return withFinancialEnvelope({
+    data: response,
+    scope: FINANCIAL_SCOPE.PERIOD,
+    canonical: canonicalFromSummary(response)
+  });
 };
 
 /** Merge two { _id: monthKey, revenue } arrays by month */
@@ -574,22 +648,30 @@ const revenue = async (companyId, query = {}) => {
 
 const costs = async (companyId, query = {}) => {
   const { startDate, endDate, productId, employeeId } = query;
-  const [productCost, ship, payroll, doctor, other] = await Promise.all([
+  const [productCost, ship, payroll, doctor, other, distributorCommission] = await Promise.all([
     sumSalesRevenueAndCogs(companyId, { startDate, endDate, distributorId: query.distributorId, productId }).then(
       (x) => x.productCost
     ),
     shippingCost(companyId, { startDate, endDate, productId }),
     payrollCostSum(companyId, { startDate, endDate, employeeId }),
     doctorActivityCostSum(companyId, { startDate, endDate }),
-    otherExpensesSum(companyId, { startDate, endDate })
+    otherExpensesSum(companyId, { startDate, endDate }),
+    distributorCommissionCostSum(companyId, {
+      startDate,
+      endDate,
+      distributorId: query.distributorId
+    })
   ]);
 
-  const totalCost = roundPKR(productCost + ship + payroll + doctor + other);
+  const totalCost = roundPKR(productCost + distributorCommission + payroll + other);
   return {
     totalCost,
+    grossProfitFormula: 'totalRevenue - productCost',
+    netProfitFormula: 'grossProfit - distributorCommissionCost - payrollCost - otherExpenses',
     byType: [
       { type: 'product_cogs', label: 'Product (COGS)', amount: productCost },
       { type: 'shipping', label: 'Shipping', amount: ship },
+      { type: 'distributor_commission', label: 'Distributor commission', amount: distributorCommission },
       { type: 'payroll', label: 'Payroll', amount: payroll },
       { type: 'doctor_activities', label: 'Doctor activities', amount: doctor },
       { type: 'other_expenses', label: 'Other expenses', amount: other }
@@ -713,7 +795,7 @@ const trends = async (companyId, query = {}) => {
     ...(Object.keys(dateR).length ? { date: dateR } : {})
   };
 
-  const [revByPeriod, shipBy, payBy, docBy, expBy] = await Promise.all([
+  const [revByPeriod, shipBy, payBy, docBy, expBy, commBy, commRevBy] = await Promise.all([
     Transaction.aggregate([
       { $match: transMatch },
       {
@@ -790,11 +872,46 @@ const trends = async (companyId, query = {}) => {
         }
       },
       { $sort: { _id: 1 } }
+    ]),
+    DeliveryRecord.aggregate([
+      {
+        $match: {
+          companyId: cid,
+          isDeleted: nd,
+          ...(Object.keys(dateR).length ? { deliveredAt: dateR } : {})
+        }
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: dateFormat, date: '$deliveredAt', timezone: 'UTC' } },
+          distributorCommissionCost: { $sum: { $ifNull: ['$distributorShareTotal', 0] } }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]),
+    Ledger.aggregate([
+      {
+        $match: {
+          companyId: cid,
+          isDeleted: nd,
+          entityType: LEDGER_ENTITY_TYPE.DISTRIBUTOR_CLEARING,
+          referenceType: LEDGER_REFERENCE_TYPE.RETURN_CLEARING_ADJ,
+          type: LEDGER_TYPE.DEBIT,
+          ...(Object.keys(dateR).length ? { date: dateR } : {})
+        }
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: dateFormat, date: '$date', timezone: 'UTC' } },
+          commissionReversal: { $sum: '$amount' }
+        }
+      },
+      { $sort: { _id: 1 } }
     ])
   ]);
 
   const keys = new Set();
-  [...revByPeriod, ...shipBy, ...payBy, ...docBy, ...expBy].forEach((x) => keys.add(x._id));
+  [...revByPeriod, ...shipBy, ...payBy, ...docBy, ...expBy, ...commBy, ...commRevBy].forEach((x) => keys.add(x._id));
 
   const merged = [...keys]
     .filter(Boolean)
@@ -805,22 +922,28 @@ const trends = async (companyId, query = {}) => {
       const p = payBy.find((x) => x._id === period) || {};
       const d = docBy.find((x) => x._id === period) || {};
       const e = expBy.find((x) => x._id === period) || {};
+      const c = commBy.find((x) => x._id === period) || {};
+      const cr = commRevBy.find((x) => x._id === period) || {};
       const revenue = roundPKR(r.revenue || 0);
       const cogs = roundPKR(r.cogs || 0);
       const shippingCost = roundPKR(s.shippingCost || 0);
       const payrollCost = roundPKR(p.payrollCost || 0);
       const doctorActivityCost = roundPKR(d.doctorActivityCost || 0);
       const otherExpenses = roundPKR(e.otherExpenses || 0);
-      const totalCost = roundPKR(cogs + shippingCost + payrollCost + doctorActivityCost + otherExpenses);
-      const netProfit = roundPKR(revenue - totalCost);
+      const distributorCommissionCost = roundPKR((c.distributorCommissionCost || 0) - (cr.commissionReversal || 0));
+      const grossProfit = roundPKR(revenue - cogs);
+      const netProfit = roundPKR(grossProfit - distributorCommissionCost - payrollCost - otherExpenses);
+      const totalCost = roundPKR(cogs + distributorCommissionCost + payrollCost + otherExpenses);
       return {
         period,
         revenue,
+        grossProfit,
         totalCost,
         netProfit,
         breakdown: {
           productCost: cogs,
           shippingCost,
+          distributorCommissionCost,
           payrollCost,
           doctorActivityCost,
           otherExpenses
@@ -828,7 +951,12 @@ const trends = async (companyId, query = {}) => {
       };
     });
 
-  return { granularity, series: merged };
+  const response = { granularity, series: merged };
+  return withFinancialEnvelope({
+    data: response,
+    scope: FINANCIAL_SCOPE.LINE,
+    canonical: canonicalFromTrends(response)
+  });
 };
 
 module.exports = {

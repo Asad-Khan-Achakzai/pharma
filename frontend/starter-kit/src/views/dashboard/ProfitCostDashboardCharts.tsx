@@ -19,6 +19,7 @@ import { reportsService } from '@/services/reports.service'
 import { productsService } from '@/services/products.service'
 import { distributorsService } from '@/services/distributors.service'
 import { usersService } from '@/services/users.service'
+import { mapSummaryFinancial, mapTrendsFinancial } from '@/utils/financialMapper'
 import Link from 'next/link'
 
 const AppReactApexCharts = dynamic(() => import('@/libs/styles/AppReactApexCharts'), { ssr: false })
@@ -64,7 +65,7 @@ const ProfitCostDashboardCharts = ({ deferFetch = false }: ProfitCostDashboardCh
       setSummaryLoading(true)
       try {
         const sumRes = await reportsService.profitSummary(params)
-        setSummary(sumRes.data.data)
+        setSummary(mapSummaryFinancial(sumRes.data.data))
       } catch (e) {
         showApiError(e, 'Failed to load profit summary')
       } finally {
@@ -75,7 +76,7 @@ const ProfitCostDashboardCharts = ({ deferFetch = false }: ProfitCostDashboardCh
       setTrendsLoading(true)
       try {
         const trRes = await reportsService.profitTrends({ ...params, granularity: 'month' })
-        setTrends(trRes.data.data)
+        setTrends(mapTrendsFinancial(trRes.data.data))
       } catch (e) {
         showApiError(e, 'Failed to load profit trends')
       } finally {

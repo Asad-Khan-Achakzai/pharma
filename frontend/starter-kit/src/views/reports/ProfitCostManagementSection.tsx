@@ -12,6 +12,7 @@ import Divider from '@mui/material/Divider'
 import { formatYyyyMmDd } from '@/utils/dateLocal'
 import { showApiError } from '@/utils/apiErrors'
 import { reportsService } from '@/services/reports.service'
+import { mapSummaryFinancial } from '@/utils/financialMapper'
 
 const formatPKR = (v: number) =>
   `₨ ${(v || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -35,7 +36,7 @@ const ProfitCostManagementSection = () => {
         reportsService.profitSummary(params),
         reportsService.productProfitability({ ...params, limit: '80' })
       ])
-      setSummary(sumRes.data.data)
+      setSummary(mapSummaryFinancial(sumRes.data.data))
       setProducts(prodRes.data.data || [])
     } catch (e) {
       showApiError(e, 'Failed to load profit & cost reports')

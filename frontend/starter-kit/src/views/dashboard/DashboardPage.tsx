@@ -12,6 +12,7 @@ import MenuItem from '@mui/material/MenuItem'
 import type { ApexOptions } from 'apexcharts'
 import { showApiError, showSuccess } from '@/utils/apiErrors'
 import { reportsService } from '@/services/reports.service'
+import { mapDashboardFinancial } from '@/utils/financialMapper'
 import { attendanceService } from '@/services/attendance.service'
 import { supplierService } from '@/services/supplier.service'
 import { useAuth } from '@/contexts/AuthContext'
@@ -297,7 +298,7 @@ const DashboardPage = () => {
         const { data: res } = await reportsService.dashboard({ signal: ac.signal })
         if (ac.signal.aborted) return
         /** Must set data before clearing loading — do not wrap in startTransition or KPI cards can show empty after skeletons */
-        setData(res.data)
+        setData(mapDashboardFinancial(res.data))
         ok = true
       } catch (err) {
         if (isAbortError(err)) {

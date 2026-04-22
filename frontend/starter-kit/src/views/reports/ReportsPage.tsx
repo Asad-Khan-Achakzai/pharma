@@ -14,6 +14,7 @@ import Box from '@mui/material/Box'
 import { showApiError } from '@/utils/apiErrors'
 import CustomTextField from '@core/components/mui/TextField'
 import { reportsService } from '@/services/reports.service'
+import { mapProfitFinancial } from '@/utils/financialMapper'
 import FinancialReportsSection from '@/views/reports/FinancialReportsSection'
 import ProfitCostManagementSection from '@/views/reports/ProfitCostManagementSection'
 
@@ -59,7 +60,7 @@ const ReportsPage = () => {
         reportsService.repPerformance(),
         reportsService.inventoryValuation()
       ])
-      setProfit(profitRes.data.data)
+      setProfit(mapProfitFinancial(profitRes.data.data))
       setExpenses(expRes.data.data || [])
       setOutstanding(outRes.data.data || [])
       setDoctorROI(roiRes.data.data || [])

@@ -6,6 +6,8 @@ const DoctorActivity = require('../models/DoctorActivity');
 const MedRepTarget = require('../models/MedRepTarget');
 const Order = require('../models/Order');
 const Expense = require('../models/Expense');
+const Payroll = require('../models/Payroll');
+const DeliveryRecord = require('../models/DeliveryRecord');
 const Payment = require('../models/Payment');
 const Collection = require('../models/Collection');
 const Settlement = require('../models/Settlement');
@@ -15,6 +17,12 @@ const Company = require('../models/Company');
 const SupplierLedger = require('../models/SupplierLedger');
 const { roundPKR } = require('../utils/currency');
 const { LEDGER_ENTITY_TYPE, SETTLEMENT_DIRECTION, SUPPLIER_LEDGER_TYPE } = require('../constants/enums');
+const {
+  FINANCIAL_SCOPE,
+  canonicalFromDashboard,
+  canonicalFromProfit,
+  withFinancialEnvelope
+} = require('../constants/financialSchema');
 const financialService = require('./financial.service');
 const supplierService = require('./supplier.service');
 const auditService = require('./audit.service');
@@ -24,16 +32,45 @@ const objectId = (id) => new mongoose.Types.ObjectId(id);
 
 const nd = { $ne: true };
 
+/**
+ * Distributor commission to deduct from company earnings:
+ * delivery distributor share minus return clearing reversals.
+ */
+const distributorCommissionNet = async (companyId, dateRange = null) => {
+  const cid = objectId(companyId);
+  const deliveryMatch = { companyId: cid, isDeleted: nd };
+  const reversalMatch = {
+    companyId: cid,
+    entityType: LEDGER_ENTITY_TYPE.DISTRIBUTOR_CLEARING,
+    referenceType: 'RETURN_CLEARING_ADJ',
+    type: 'DEBIT',
+    isDeleted: nd
+  };
+  if (dateRange) {
+    deliveryMatch.deliveredAt = dateRange;
+    reversalMatch.date = dateRange;
+  }
+  const [deliveryAgg, reversalAgg] = await Promise.all([
+    DeliveryRecord.aggregate([
+      { $match: deliveryMatch },
+      { $group: { _id: null, total: { $sum: { $ifNull: ['$distributorShareTotal', 0] } } } }
+    ]),
+    Ledger.aggregate([
+      { $match: reversalMatch },
+      { $group: { _id: null, total: { $sum: '$amount' } } }
+    ])
+  ]);
+  const deliveryShare = roundPKR(deliveryAgg[0]?.total || 0);
+  const reversal = roundPKR(reversalAgg[0]?.total || 0);
+  return roundPKR(deliveryShare - reversal);
+};
+
 const dashboard = async (companyId) => {
   const cid = objectId(companyId);
-  const [salesAgg, expenseAgg, orderCounts, paymentAgg, outstandingAgg, bonusAgg] = await Promise.all([
+  const [salesAgg, orderCounts, paymentAgg, outstandingAgg, bonusAgg, payrollAgg, expenseAgg, distributorCommissionTotal] = await Promise.all([
     Transaction.aggregate([
-      { $match: { companyId: cid, type: 'SALE', isDeleted: nd } },
+      { $match: { companyId: cid, type: { $in: ['SALE', 'RETURN'] }, isDeleted: nd } },
       { $group: { _id: null, totalRevenue: { $sum: '$revenue' }, totalProfit: { $sum: '$profit' } } }
-    ]),
-    Transaction.aggregate([
-      { $match: { companyId: cid, type: 'EXPENSE', isDeleted: nd } },
-      { $group: { _id: null, totalExpenses: { $sum: '$cost' } } }
     ]),
     Order.aggregate([
       { $match: { companyId: cid, isDeleted: nd } },
@@ -56,34 +93,50 @@ const dashboard = async (companyId) => {
     Order.aggregate([
       { $match: { companyId: cid, isDeleted: nd } },
       { $group: { _id: null, totalBonusUnitsOnOrders: { $sum: { $ifNull: ['$totalBonusQuantity', 0] } } } }
-    ])
+    ]),
+    Payroll.aggregate([
+      { $match: { companyId: cid, status: 'PAID', isDeleted: nd } },
+      { $group: { _id: null, totalPayroll: { $sum: '$netSalary' } } }
+    ]),
+    Expense.aggregate([
+      { $match: { companyId: cid, isDeleted: nd, category: { $ne: 'SALARY' } } },
+      { $group: { _id: null, totalExpenses: { $sum: '$amount' } } }
+    ]),
+    distributorCommissionNet(companyId)
   ]);
 
   const sales = salesAgg[0] || { totalRevenue: 0, totalProfit: 0 };
-  const expenses = expenseAgg[0] || { totalExpenses: 0 };
   const paid = paymentAgg[0] || { totalPaid: 0 };
   const outstanding = outstandingAgg[0] || { totalDebit: 0, totalCredit: 0 };
 
-  const netProfit = await Transaction.aggregate([
-    { $match: { companyId: cid, isDeleted: nd } },
-    { $group: { _id: null, net: { $sum: '$profit' } } }
-  ]);
+  const payroll = payrollAgg[0]?.totalPayroll || 0;
+  const expenses = expenseAgg[0] || { totalExpenses: 0 };
+  const grossProfit = roundPKR(sales.totalProfit);
+  const netProfit = roundPKR(grossProfit - distributorCommissionTotal - payroll - expenses.totalExpenses);
 
   const orderStatusMap = {};
   orderCounts.forEach((o) => { orderStatusMap[o._id] = o.count; });
 
   const bonusRow = bonusAgg[0] || { totalBonusUnitsOnOrders: 0 };
 
-  return {
+  const response = {
     totalSales: roundPKR(sales.totalRevenue),
-    grossProfit: roundPKR(sales.totalProfit),
+    grossProfit,
+    distributorCommissionTotal: roundPKR(distributorCommissionTotal),
+    totalPayroll: roundPKR(payroll),
     totalExpenses: roundPKR(expenses.totalExpenses),
-    netProfit: roundPKR(netProfit[0]?.net || 0),
+    netProfit,
     totalPaid: roundPKR(paid.totalPaid),
     totalOutstanding: roundPKR(outstanding.totalDebit - outstanding.totalCredit),
     ordersByStatus: orderStatusMap,
     totalBonusGiven: bonusRow.totalBonusUnitsOnOrders || 0
   };
+
+  return withFinancialEnvelope({
+    data: response,
+    scope: FINANCIAL_SCOPE.SNAPSHOT,
+    canonical: canonicalFromDashboard(response)
+  });
 };
 
 const sales = async (companyId, from, to) => {
@@ -102,30 +155,73 @@ const sales = async (companyId, from, to) => {
 
 const profit = async (companyId, from, to) => {
   const match = { companyId: objectId(companyId), isDeleted: nd };
+  const dateR = {};
   if (from || to) {
     match.date = {};
     if (from) match.date.$gte = new Date(from);
     if (to) match.date.$lte = new Date(to);
+    if (from) dateR.$gte = new Date(from);
+    if (to) dateR.$lte = new Date(to);
   }
-  const result = await Transaction.aggregate([
-    { $match: match },
-    {
-      $group: {
-        _id: '$type',
-        revenue: { $sum: '$revenue' },
-        cost: { $sum: '$cost' },
-        profit: { $sum: '$profit' }
+  const [result, distributorCommissionTotal, payrollAgg, expenseAgg] = await Promise.all([
+    Transaction.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: '$type',
+          revenue: { $sum: '$revenue' },
+          cost: { $sum: '$cost' },
+          profit: { $sum: '$profit' }
+        }
       }
-    }
+    ]),
+    distributorCommissionNet(companyId, Object.keys(dateR).length ? dateR : null),
+    Payroll.aggregate([
+      {
+        $match: {
+          companyId: objectId(companyId),
+          isDeleted: nd,
+          status: 'PAID',
+          ...(Object.keys(dateR).length ? { paidOn: dateR } : {})
+        }
+      },
+      { $group: { _id: null, total: { $sum: '$netSalary' } } }
+    ]),
+    Expense.aggregate([
+      {
+        $match: {
+          companyId: objectId(companyId),
+          isDeleted: nd,
+          category: { $ne: 'SALARY' },
+          ...(Object.keys(dateR).length ? { date: dateR } : {})
+        }
+      },
+      { $group: { _id: null, total: { $sum: '$amount' } } }
+    ])
   ]);
 
   const map = {};
   result.forEach((r) => { map[r._id] = r; });
 
   const grossProfit = roundPKR((map.SALE?.profit || 0) + (map.RETURN?.profit || 0));
-  const netProfit = roundPKR(result.reduce((s, r) => s + r.profit, 0));
+  const totalPayroll = roundPKR(payrollAgg[0]?.total || 0);
+  const totalExpenses = roundPKR(expenseAgg[0]?.total || 0);
+  const netProfit = roundPKR(grossProfit - distributorCommissionTotal - totalExpenses - totalPayroll);
 
-  return { grossProfit, netProfit, breakdown: result };
+  const response = {
+    grossProfit,
+    distributorCommissionTotal: roundPKR(distributorCommissionTotal),
+    totalExpenses,
+    totalPayroll,
+    netProfit,
+    breakdown: result
+  };
+
+  return withFinancialEnvelope({
+    data: response,
+    scope: FINANCIAL_SCOPE.PERIOD,
+    canonical: canonicalFromProfit(response)
+  });
 };
 
 const expenses = async (companyId, from, to) => {
